@@ -17,6 +17,7 @@ import TranslationTabs, { TranslationView } from "@/components/TranslationTabs";
 import { downloadBilingualHtml } from "@/lib/exportHtml";
 import { downloadEnglishPdf } from "@/lib/exportPdf";
 import { downloadTxt } from "@/lib/exportTxt";
+import { normalizeTranslationFootnotes, parseTranslationText } from "@/lib/footnotes";
 import { extractSelectableTextFromPdf } from "@/lib/pdfExtract";
 import {
   createChunksFromPastedText,
@@ -106,7 +107,9 @@ export default function HomePage() {
     return createChunksFromPastedText(pastedText);
   }, [inputMode, pdfPages, pastedText]);
 
-  const englishText = useMemo(() => joinEnglishTranslation(translatedChunks), [translatedChunks]);
+  const rawEnglishText = useMemo(() => joinEnglishTranslation(translatedChunks), [translatedChunks]);
+  const englishText = useMemo(() => normalizeTranslationFootnotes(rawEnglishText), [rawEnglishText]);
+  const parsedEnglishText = useMemo(() => parseTranslationText(englishText), [englishText]);
   const sourceLabel = useMemo(() => {
     if (inputMode === "pdf") {
       return pdfName || "Uploaded PDF";
@@ -263,7 +266,7 @@ export default function HomePage() {
         }
       });
 
-      const translatedText = joinEnglishTranslation(translatedPageChunks);
+      const translatedText = normalizeTranslationFootnotes(joinEnglishTranslation(translatedPageChunks));
       const pageResult: TranslationPage = {
         pageNumber: page.pageNumber,
         originalText: page.text,
@@ -531,11 +534,30 @@ export default function HomePage() {
                   className="document-text text-slate-800 dark:text-slate-100"
                   style={{ fontFamily: "var(--font-doc), Georgia, serif", fontSize: `${documentFontSize}px`, lineHeight: 1.9 }}
                 >
-                  {translatedChunks.map((chunk) => (
-                    <p key={chunk.id} className="mb-5 last:mb-0">
-                      {chunk.translatedEnglish}
+                  {parsedEnglishText.bodyParagraphs.map((paragraph, index) => (
+                    <p key={`english-body-${index + 1}`} className="mb-5 last:mb-0">
+                      {paragraph}
                     </p>
                   ))}
+
+                  {parsedEnglishText.footnotes.length > 0 ? (
+                    <section className="mt-8 rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4 dark:border-amber-900/80 dark:bg-amber-950/30">
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                        Footnotes
+                      </p>
+                      <ol className="space-y-2">
+                        {parsedEnglishText.footnotes.map((note) => (
+                          <li
+                            key={`${note.marker}-${note.content.slice(0, 24)}`}
+                            className="text-sm leading-8 text-slate-700 dark:text-slate-200"
+                          >
+                            <span className="mr-2 font-semibold text-amber-800 dark:text-amber-200">{note.marker}</span>
+                            <span>{note.content}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </section>
+                  ) : null}
                 </div>
               </article>
             ) : null}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { parseTranslationText } from "@/lib/footnotes";
 import { ExtractedPdfPage, TranslationPage } from "@/lib/types";
 
 type PdfSideBySideViewProps = {
@@ -62,6 +63,7 @@ export default function PdfSideBySideView({
   const effectivePageCount = Math.max(totalPages, 1);
   const hashZoom = zoom === "fit-width" ? "page-width" : zoom;
   const viewerSrc = `${pdfUrl}#page=${currentPage}&zoom=${hashZoom}`;
+  const parsedTranslation = parseTranslationText(currentTranslation?.translatedText || "");
 
   const handlePrev = () => setCurrentPage((prev) => Math.max(1, prev - 1));
   const handleNext = () => setCurrentPage((prev) => Math.min(effectivePageCount, prev + 1));
@@ -191,15 +193,27 @@ export default function PdfSideBySideView({
               className="document-text text-sm leading-8 text-slate-800 dark:text-slate-100"
               style={{ fontFamily: "var(--font-doc), Georgia, serif" }}
             >
-              {currentTranslation.chunks.length > 0 ? (
-                currentTranslation.chunks.map((chunk) => (
-                  <p key={chunk.id} className="mb-4 last:mb-0">
-                    {chunk.translatedEnglish}
+              {parsedTranslation.bodyParagraphs.map((paragraph, index) => (
+                <p key={`body-${index + 1}`} className="mb-4 last:mb-0">
+                  {paragraph}
+                </p>
+              ))}
+
+              {parsedTranslation.footnotes.length > 0 ? (
+                <section className="mt-6 rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4 dark:border-amber-900/80 dark:bg-amber-950/30">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                    Footnotes
                   </p>
-                ))
-              ) : (
-                <p>{currentTranslation.translatedText}</p>
-              )}
+                  <ol className="space-y-2">
+                    {parsedTranslation.footnotes.map((note) => (
+                      <li key={`${note.marker}-${note.content.slice(0, 24)}`} className="text-sm leading-7 text-slate-700 dark:text-slate-200">
+                        <span className="mr-2 font-semibold text-amber-800 dark:text-amber-200">{note.marker}</span>
+                        <span>{note.content}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              ) : null}
             </div>
           ) : (
             <p className="document-text rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">

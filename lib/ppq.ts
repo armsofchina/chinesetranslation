@@ -1,3 +1,5 @@
+import { normalizeTranslationFootnotes } from "@/lib/footnotes";
+
 const PPQ_URL = process.env.PPQ_CHAT_COMPLETIONS_URL || "https://api.ppq.ai/chat/completions";
 
 export const DEFAULT_MODEL = process.env.PPQ_MODEL || process.env.OPENROUTER_MODEL || "claude-sonnet-4-5";
@@ -77,5 +79,5 @@ export const translateWithPpq = async ({ apiKey, model, text }: TranslateChunkIn
     throw new PpqRequestError("Empty translation result.", 502);
   }
 
-  return content;
+  return normalizeTranslationFootnotes(content);
 };
