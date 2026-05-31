@@ -35,6 +35,7 @@ export default function HomePage() {
   const [processing, setProcessing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [usedModel, setUsedModel] = useState("");
+  const [activityLog, setActivityLog] = useState<string[]>([]);
 
   useEffect(() => {
     const savedTheme = getSavedThemePreference();
@@ -71,6 +72,10 @@ export default function HomePage() {
   }, [pdfChunks, pastedText]);
 
   const englishText = useMemo(() => joinEnglishTranslation(translatedChunks), [translatedChunks]);
+
+  const pushActivity = (message: string) => {
+    setActivityLog((previous) => [`${new Date().toLocaleTimeString()} - ${message}`, ...previous].slice(0, 12));
+  };
 
   const handleFileSelect = async (file: File | null) => {
     setErrorMessage("");
@@ -148,6 +153,7 @@ export default function HomePage() {
   const handleTranslate = async () => {
     setErrorMessage("");
     setCopied(false);
+    setActivityLog([]);
 
     if (sourceChunks.length === 0) {
       setErrorMessage("Add a PDF or paste Chinese text before translating.");
@@ -156,39 +162,56 @@ export default function HomePage() {
 
     setProcessing(true);
     setStatusMessage("Preparing text...");
+    setTranslatedChunks([]);
+    pushActivity("Preparing translation plan...");
 
     await new Promise((resolve) => setTimeout(resolve, 120));
     setStatusMessage("Translating...");
+    pushActivity(`Found ${sourceChunks.length} section(s) to translate.`);
 
     try {
-      const response = await fetch("/api/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          chunks: sourceChunks,
-          userOpenRouterApiKey: activeUserApiKey || undefined
-        })
-      });
+      const completedChunks: TranslationChunk[] = [];
 
-      const payload = (await response.json()) as TranslateResponse & { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Translation API failed.");
+      for (let index = 0; index < sourceChunks.length; index += 1) {
+        const chunk = sourceChunks[index];
+        setStatusMessage(`Translating section ${index + 1} of ${sourceChunks.length}...`);
+        pushActivity(`Analyzing section ${index + 1}/${sourceChunks.length}...`);
+
+        const response = await fetch("/api/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            chunks: [chunk],
+            userOpenRouterApiKey: activeUserApiKey || undefined
+          })
+        });
+
+        const payload = (await response.json()) as TranslateResponse & { error?: string };
+        if (!response.ok) {
+          throw new Error(payload.error || "Translation API failed.");
+        }
+
+        const translatedChunk = payload.chunks?.[0];
+        if (!translatedChunk?.translatedEnglish?.trim()) {
+          throw new Error("Empty translation result.");
+        }
+
+        completedChunks.push(translatedChunk);
+        setTranslatedChunks([...completedChunks]);
+        setUsedModel(payload.model);
+        pushActivity(`Completed section ${index + 1}/${sourceChunks.length}.`);
       }
 
-      if (!payload.chunks?.length) {
-        throw new Error("Empty translation result.");
-      }
-
-      setTranslatedChunks(payload.chunks);
-      setUsedModel(payload.model);
       setActiveView("english");
       setStatusMessage("Generating output...");
+      pushActivity("Polishing final English output...");
       setTimeout(() => setStatusMessage(""), 500);
+      pushActivity("Translation complete.");
     } catch (error) {
       setStatusMessage("");
-      setTranslatedChunks([]);
+      pushActivity("Translation stopped due to an error.");
       setErrorMessage(error instanceof Error ? error.message : "Translation failed.");
     } finally {
       setProcessing(false);
@@ -204,6 +227,7 @@ export default function HomePage() {
     setErrorMessage("");
     setCopied(false);
     setUsedModel("");
+    setActivityLog([]);
   };
 
   const handleCopyEnglish = async () => {
@@ -289,6 +313,25 @@ export default function HomePage() {
             {statusMessage ? <span className="text-sm text-slate-600 dark:text-slate-300">{statusMessage}</span> : null}
             {usedModel ? <span className="text-xs text-slate-500 dark:text-slate-400">Model: {usedModel}</span> : null}
           </div>
+
+          {(processing || activityLog.length > 0) && (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/70">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Translation Activity
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Live progress feedback. This shows translation steps, not private model chain-of-thought.
+              </p>
+              <div className="mt-3 max-h-44 space-y-1 overflow-auto rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-950/70">
+                {processing ? <p className="animate-pulse text-sky-700 dark:text-sky-300">Thinking...</p> : null}
+                {activityLog.map((line, index) => (
+                  <p key={`${line}-${index}`} className="text-slate-700 dark:text-slate-200">
+                    {line}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
 
           {errorMessage ? (
             <div className="mt-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200">

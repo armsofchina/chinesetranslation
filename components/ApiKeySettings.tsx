@@ -51,6 +51,44 @@ export default function ApiKeySettings({
           </button>
         </div>
 
+        <div className="mb-5 rounded-xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-900 dark:bg-sky-950/40">
+          <p className="text-sm font-medium text-sky-900 dark:text-sky-100">
+            Want higher translation limits?
+          </p>
+          <p className="mt-1 text-xs text-sky-800 dark:text-sky-200">
+            You can use your own OpenRouter API key. This gives you your own request/credit limits instead of relying on
+            the app default key.
+          </p>
+
+          <div className="mt-3 space-y-2 text-xs text-slate-700 dark:text-slate-200">
+            <p className="font-semibold text-slate-900 dark:text-slate-100">Quick tutorial: get a free OpenRouter key</p>
+            <p>1) Create or sign in to your OpenRouter account at openrouter.ai.</p>
+            <p>2) Open the Keys page and click Create Key.</p>
+            <p>3) Name your key (for example: Chinese Translator App).</p>
+            <p>4) Copy the key once shown (it may only be visible one time).</p>
+            <p>5) Paste it below and click Save.</p>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a
+              href="https://openrouter.ai/"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-100 dark:border-sky-700 dark:bg-slate-900 dark:text-sky-200 dark:hover:bg-slate-800"
+            >
+              Open OpenRouter
+            </a>
+            <a
+              href="https://openrouter.ai/keys"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-100 dark:border-sky-700 dark:bg-slate-900 dark:text-sky-200 dark:hover:bg-slate-800"
+            >
+              Go to API Keys
+            </a>
+          </div>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-800 dark:text-slate-100">
