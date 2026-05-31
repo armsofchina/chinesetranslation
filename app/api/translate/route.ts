@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DEFAULT_MODEL, OpenRouterRequestError, translateWithOpenRouter } from "@/lib/openrouter";
+import { DEFAULT_MODEL, PpqRequestError, translateWithPpq } from "@/lib/ppq";
 import { TranslationChunk } from "@/lib/types";
 
 type TranslateRequestBody = {
   chunks: TranslationChunk[];
+  userApiKey?: string;
+  userPpqApiKey?: string;
   userOpenRouterApiKey?: string;
   model?: string;
 };
@@ -12,14 +14,14 @@ export const runtime = "nodejs";
 
 const toUserFriendlyError = (status: number, message: string): string => {
   const normalized = message.toLowerCase();
-  if (status === 401 || normalized.includes("invalid api key")) {
-    return "Invalid OpenRouter API key. Check your key and try again.";
+  if (status === 401 || status === 403 || normalized.includes("invalid api key")) {
+    return "Invalid PPQ API key. Check your key and try again.";
   }
   if (status === 429) {
-    return "OpenRouter rate limit reached. Please wait and try again.";
+    return "PPQ rate limit reached. Please wait and try again.";
   }
-  if (status === 402 || normalized.includes("insufficient") || normalized.includes("credit")) {
-    return "OpenRouter reports insufficient credits or payment issues for this key.";
+  if (status === 402 || normalized.includes("insufficient") || normalized.includes("credit") || normalized.includes("balance")) {
+    return "PPQ reports insufficient balance or payment issues for this key.";
   }
   return message || "Translation API failed.";
 };
@@ -36,15 +38,16 @@ export async function POST(request: NextRequest) {
     const model = body.model?.trim() || DEFAULT_MODEL;
 
     // Default app key is loaded only on the server from process.env.
-    const defaultServerKey = process.env.OPENROUTER_API_KEY?.trim();
+    const defaultServerKey = process.env.PPQ_API_KEY?.trim() || process.env.OPENROUTER_API_KEY?.trim();
     // If user provides a key in this request, it overrides the default server key.
-    const selectedApiKey = body.userOpenRouterApiKey?.trim() || defaultServerKey;
+    const selectedApiKey =
+      body.userPpqApiKey?.trim() || body.userApiKey?.trim() || body.userOpenRouterApiKey?.trim() || defaultServerKey;
 
     if (!selectedApiKey) {
       return NextResponse.json(
         {
           error:
-            "No OpenRouter API key is configured. Add a key in settings or configure OPENROUTER_API_KEY on the server."
+            "No PPQ API key is configured. Add a key in settings or configure PPQ_API_KEY on the server."
         },
         { status: 400 }
       );
@@ -52,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     const translatedChunks = await Promise.all(
       incomingChunks.map(async (chunk) => {
-        const translatedEnglish = await translateWithOpenRouter({
+        const translatedEnglish = await translateWithPpq({
           apiKey: selectedApiKey,
           model,
           text: chunk.originalChinese
@@ -69,7 +72,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ chunks: translatedChunks, model });
   } catch (error) {
-    if (error instanceof OpenRouterRequestError) {
+    if (error instanceof PpqRequestError) {
       return NextResponse.json(
         { error: toUserFriendlyError(error.status, error.message) },
         { status: error.status >= 400 ? error.status : 500 }

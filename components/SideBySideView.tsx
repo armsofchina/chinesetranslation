@@ -22,9 +22,7 @@ export default function SideBySideView({ chunks }: SideBySideViewProps) {
           className="grid grid-cols-1 gap-4 rounded-3xl border border-amber-200/70 bg-white/90 p-4 shadow-soft dark:border-slate-700 dark:bg-slate-900/75 md:grid-cols-2"
         >
           <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-3 dark:border-slate-700 dark:bg-slate-950/60">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Original Chinese {chunk.pageNumber ? `(Page ${chunk.pageNumber})` : ""}
-            </p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Original Chinese</p>
             <p className="document-text text-sm leading-7 text-slate-800 dark:text-slate-100">{chunk.originalChinese}</p>
           </div>
           <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-3 dark:border-slate-700 dark:bg-slate-950/60">

@@ -8,6 +8,7 @@ import ErrorState from "@/components/ErrorState";
 import ExportButtons from "@/components/ExportButtons";
 import FileUpload from "@/components/FileUpload";
 import InputModeTabs, { InputMode } from "@/components/InputModeTabs";
+import PdfSideBySideView from "@/components/PdfSideBySideView";
 import ProgressIndicator, { ProgressStep } from "@/components/ProgressIndicator";
 import SideBySideView from "@/components/SideBySideView";
 import TextInputPanel from "@/components/TextInputPanel";
@@ -17,14 +18,20 @@ import { downloadBilingualHtml } from "@/lib/exportHtml";
 import { downloadEnglishPdf } from "@/lib/exportPdf";
 import { downloadTxt } from "@/lib/exportTxt";
 import { extractSelectableTextFromPdf } from "@/lib/pdfExtract";
-import { createChunksFromPastedText, createChunksFromPdfPages, joinEnglishTranslation } from "@/lib/textChunking";
+import {
+  createChunksFromPastedText,
+  createChunksFromPdfPages,
+  createChunksFromSinglePdfPage,
+  joinEnglishTranslation
+} from "@/lib/textChunking";
 import { applyThemePreference, getSavedThemePreference, saveThemePreference } from "@/lib/theme";
-import { ThemePreference, TranslationChunk, TranslateResponse } from "@/lib/types";
+import { ExtractedPdfPage, ThemePreference, TranslationChunk, TranslationPage, TranslateResponse } from "@/lib/types";
 
-const USER_API_KEY_STORAGE = "translator-user-openrouter-key";
+const USER_API_KEY_STORAGE = "translator-user-ppq-key";
+const LEGACY_USER_API_KEY_STORAGE = "translator-user-openrouter-key";
 
 const SCANNED_MESSAGE =
-  "This PDF does not appear to contain selectable text. It may be a scanned document. OCR support can be added in a future version.";
+  "This PDF appears to contain scanned images rather than selectable text. OCR support can be added in a future version.";
 
 export default function HomePage() {
   const [theme, setTheme] = useState<ThemePreference>("system");
@@ -35,10 +42,14 @@ export default function HomePage() {
   const [rememberKey, setRememberKey] = useState(false);
 
   const [pdfName, setPdfName] = useState<string | undefined>(undefined);
-  const [pdfChunks, setPdfChunks] = useState<TranslationChunk[]>([]);
+  const [pdfPages, setPdfPages] = useState<ExtractedPdfPage[]>([]);
+  const [pdfTotalPages, setPdfTotalPages] = useState(0);
+  const [pdfObjectUrl, setPdfObjectUrl] = useState<string | undefined>(undefined);
+  const [pdfScannedMessage, setPdfScannedMessage] = useState("");
   const [pastedText, setPastedText] = useState("");
 
   const [translatedChunks, setTranslatedChunks] = useState<TranslationChunk[]>([]);
+  const [translationPages, setTranslationPages] = useState<TranslationPage[]>([]);
   const [activeView, setActiveView] = useState<TranslationView>("english");
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -55,11 +66,14 @@ export default function HomePage() {
     setTheme(savedTheme);
     applyThemePreference(savedTheme);
 
-    const savedKey = window.localStorage.getItem(USER_API_KEY_STORAGE) || "";
+    const savedKey =
+      window.localStorage.getItem(USER_API_KEY_STORAGE) || window.localStorage.getItem(LEGACY_USER_API_KEY_STORAGE) || "";
     if (savedKey) {
       setApiKeyDraft(savedKey);
       setActiveUserApiKey(savedKey);
       setRememberKey(true);
+      window.localStorage.setItem(USER_API_KEY_STORAGE, savedKey);
+      window.localStorage.removeItem(LEGACY_USER_API_KEY_STORAGE);
     }
   }, []);
 
@@ -77,12 +91,20 @@ export default function HomePage() {
     return () => media.removeEventListener("change", listener);
   }, [theme]);
 
+  useEffect(() => {
+    return () => {
+      if (pdfObjectUrl) {
+        URL.revokeObjectURL(pdfObjectUrl);
+      }
+    };
+  }, [pdfObjectUrl]);
+
   const sourceChunks = useMemo(() => {
     if (inputMode === "pdf") {
-      return pdfChunks;
+      return createChunksFromPdfPages(pdfPages);
     }
     return createChunksFromPastedText(pastedText);
-  }, [inputMode, pdfChunks, pastedText]);
+  }, [inputMode, pdfPages, pastedText]);
 
   const englishText = useMemo(() => joinEnglishTranslation(translatedChunks), [translatedChunks]);
   const sourceLabel = useMemo(() => {
@@ -93,6 +115,8 @@ export default function HomePage() {
   }, [inputMode, pdfName]);
   const translateDisabled = processing || sourceChunks.length === 0;
   const usingCustomKey = Boolean(activeUserApiKey.trim());
+  const canShowPdfSideBySide = inputMode === "pdf" && Boolean(pdfObjectUrl) && pdfTotalPages > 0;
+  const showResultsPanel = translatedChunks.length > 0 || canShowPdfSideBySide;
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -100,58 +124,68 @@ export default function HomePage() {
     setTimeout(() => setToastVisible(false), 1800);
   };
 
+  const replacePdfUrl = (nextUrl?: string) => {
+    setPdfObjectUrl((prev) => {
+      if (prev) {
+        URL.revokeObjectURL(prev);
+      }
+      return nextUrl;
+    });
+  };
+
+  const resetPdfState = () => {
+    setPdfName(undefined);
+    setPdfPages([]);
+    setPdfTotalPages(0);
+    setPdfScannedMessage("");
+    replacePdfUrl(undefined);
+  };
+
   const handleFileSelect = async (file: File | null) => {
     setErrorMessage("");
     setTranslatedChunks([]);
+    setTranslationPages([]);
+    setPdfScannedMessage("");
 
     if (!file) {
-      setPdfName(undefined);
-      setPdfChunks([]);
+      resetPdfState();
       setProgressStep("idle");
+      setStatusMessage("");
       return;
     }
 
     if (file.type !== "application/pdf") {
       setErrorMessage("Please upload a PDF file.");
-      setPdfName(undefined);
-      setPdfChunks([]);
+      resetPdfState();
       return;
     }
 
     setInputMode("pdf");
     setPdfName(file.name);
+    replacePdfUrl(URL.createObjectURL(file));
     setProgressStep("extracting");
     setStatusMessage("Extracting text...");
 
     const result = await extractSelectableTextFromPdf(file);
 
-    if (result.kind === "scanned") {
-      setPdfChunks([]);
-      setErrorMessage(SCANNED_MESSAGE);
-      setStatusMessage("");
-      setProgressStep("idle");
-      return;
-    }
-
     if (result.kind === "error") {
-      setPdfChunks([]);
-      setErrorMessage(result.message);
+      setPdfPages([]);
+      setPdfTotalPages(0);
       setStatusMessage("");
       setProgressStep("idle");
+      setErrorMessage(result.message);
       return;
     }
 
-    setProgressStep("preparing");
-    setStatusMessage("Preparing chunks...");
-    const chunks = createChunksFromPdfPages(result.pages);
-
-    if (chunks.length === 0) {
-      setErrorMessage(SCANNED_MESSAGE);
-    }
-
-    setPdfChunks(chunks);
+    setPdfPages(result.pages);
+    setPdfTotalPages(result.totalPages);
     setStatusMessage("");
     setProgressStep("idle");
+
+    if (result.kind === "scanned") {
+      setPdfScannedMessage(SCANNED_MESSAGE);
+      return;
+    }
   };
 
   const handleSaveApiKey = () => {
@@ -162,6 +196,7 @@ export default function HomePage() {
       window.localStorage.setItem(USER_API_KEY_STORAGE, trimmed);
     } else {
       window.localStorage.removeItem(USER_API_KEY_STORAGE);
+      window.localStorage.removeItem(LEGACY_USER_API_KEY_STORAGE);
     }
 
     if (!trimmed) {
@@ -176,6 +211,72 @@ export default function HomePage() {
     setActiveUserApiKey("");
     setRememberKey(false);
     window.localStorage.removeItem(USER_API_KEY_STORAGE);
+    window.localStorage.removeItem(LEGACY_USER_API_KEY_STORAGE);
+  };
+
+  const handleTranslatePdfPageByPage = async () => {
+    const pagesToTranslate = pdfPages;
+    const completedChunks: TranslationChunk[] = [];
+    const completedPages: TranslationPage[] = [];
+
+    for (let index = 0; index < pagesToTranslate.length; index += 1) {
+      const page = pagesToTranslate[index];
+      setStatusMessage(`Translating page ${page.pageNumber} of ${pdfTotalPages}...`);
+
+      const pageChunks = createChunksFromSinglePdfPage(page);
+      if (pageChunks.length === 0) {
+        const emptyPage: TranslationPage = {
+          pageNumber: page.pageNumber,
+          originalText: page.text,
+          translatedText: "",
+          chunks: []
+        };
+        completedPages.push(emptyPage);
+        setTranslationPages([...completedPages]);
+        continue;
+      }
+
+      const response = await fetch("/api/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          chunks: pageChunks,
+          userPpqApiKey: activeUserApiKey || undefined
+        })
+      });
+
+      const payload = (await response.json()) as TranslateResponse & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Translation API failed.");
+      }
+
+      const translatedPageChunks = payload.chunks || [];
+      if (translatedPageChunks.length === 0) {
+        throw new Error(`No translation output returned for page ${page.pageNumber}.`);
+      }
+
+      translatedPageChunks.forEach((chunk) => {
+        if (!chunk.translatedEnglish?.trim()) {
+          throw new Error(`Empty translation output returned for page ${page.pageNumber}.`);
+        }
+      });
+
+      const translatedText = joinEnglishTranslation(translatedPageChunks);
+      const pageResult: TranslationPage = {
+        pageNumber: page.pageNumber,
+        originalText: page.text,
+        translatedText,
+        chunks: translatedPageChunks
+      };
+
+      completedPages.push(pageResult);
+      completedChunks.push(...translatedPageChunks);
+      setTranslationPages([...completedPages]);
+      setTranslatedChunks([...completedChunks]);
+      setUsedModel(payload.model);
+    }
   };
 
   const handleTranslate = async () => {
@@ -188,43 +289,49 @@ export default function HomePage() {
 
     setProcessing(true);
     setTranslatedChunks([]);
+    setTranslationPages([]);
     setProgressStep("preparing");
     setStatusMessage("Preparing chunks...");
 
     await new Promise((resolve) => setTimeout(resolve, 120));
 
     try {
-      const completedChunks: TranslationChunk[] = [];
       setProgressStep("translating");
 
-      for (let index = 0; index < sourceChunks.length; index += 1) {
-        const chunk = sourceChunks[index];
-        setStatusMessage(`Translating section ${index + 1} of ${sourceChunks.length}...`);
+      if (inputMode === "pdf") {
+        await handleTranslatePdfPageByPage();
+      } else {
+        const completedChunks: TranslationChunk[] = [];
 
-        const response = await fetch("/api/translate", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            chunks: [chunk],
-            userOpenRouterApiKey: activeUserApiKey || undefined
-          })
-        });
+        for (let index = 0; index < sourceChunks.length; index += 1) {
+          const chunk = sourceChunks[index];
+          setStatusMessage(`Translating section ${index + 1} of ${sourceChunks.length}...`);
 
-        const payload = (await response.json()) as TranslateResponse & { error?: string };
-        if (!response.ok) {
-          throw new Error(payload.error || "Translation API failed.");
+          const response = await fetch("/api/translate", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              chunks: [chunk],
+              userPpqApiKey: activeUserApiKey || undefined
+            })
+          });
+
+          const payload = (await response.json()) as TranslateResponse & { error?: string };
+          if (!response.ok) {
+            throw new Error(payload.error || "Translation API failed.");
+          }
+
+          const translatedChunk = payload.chunks?.[0];
+          if (!translatedChunk?.translatedEnglish?.trim()) {
+            throw new Error("Empty translation result.");
+          }
+
+          completedChunks.push(translatedChunk);
+          setTranslatedChunks([...completedChunks]);
+          setUsedModel(payload.model);
         }
-
-        const translatedChunk = payload.chunks?.[0];
-        if (!translatedChunk?.translatedEnglish?.trim()) {
-          throw new Error("Empty translation result.");
-        }
-
-        completedChunks.push(translatedChunk);
-        setTranslatedChunks([...completedChunks]);
-        setUsedModel(payload.model);
       }
 
       setProgressStep("generating");
@@ -249,10 +356,10 @@ export default function HomePage() {
   };
 
   const handleReset = () => {
-    setPdfName(undefined);
-    setPdfChunks([]);
+    resetPdfState();
     setPastedText("");
     setTranslatedChunks([]);
+    setTranslationPages([]);
     setStatusMessage("");
     setErrorMessage("");
     setUsedModel("");
@@ -345,7 +452,7 @@ export default function HomePage() {
             </button>
 
             <span className="rounded-full border border-slate-300 bg-white/80 px-3 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-              {usingCustomKey ? "Using your OpenRouter key" : "Using default app key"}
+              {usingCustomKey ? "Using your PPQ key" : "Using default app key"}
             </span>
 
             {usedModel ? <span className="text-xs text-slate-500 dark:text-slate-400">Model: {usedModel}</span> : null}
@@ -357,7 +464,7 @@ export default function HomePage() {
 
         <ErrorState message={errorMessage} />
 
-        {translatedChunks.length > 0 ? (
+        {showResultsPanel ? (
           <section className="space-y-4 rounded-[30px] border border-amber-200/70 bg-white/85 p-6 shadow-soft backdrop-blur dark:border-slate-700 dark:bg-slate-900/75">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -407,7 +514,7 @@ export default function HomePage() {
                     className="rounded-3xl border border-amber-200/70 bg-white/90 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70"
                   >
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      {chunk.pageNumber ? `Page ${chunk.pageNumber}` : "Original Chinese"}
+                      {inputMode === "pdf" ? `Page ${chunk.pageNumber}` : "Original Chinese"}
                     </p>
                     <p className="cn-text document-text text-[15px] text-slate-800 dark:text-slate-100">{chunk.originalChinese}</p>
                   </article>
@@ -433,7 +540,19 @@ export default function HomePage() {
               </article>
             ) : null}
 
-            {activeView === "side-by-side" ? <SideBySideView chunks={translatedChunks} /> : null}
+            {activeView === "side-by-side" ? (
+              canShowPdfSideBySide ? (
+                <PdfSideBySideView
+                  pdfUrl={pdfObjectUrl ?? ""}
+                  totalPages={pdfTotalPages}
+                  extractedPages={pdfPages}
+                  translationPages={translationPages}
+                  scannedMessage={pdfScannedMessage}
+                />
+              ) : (
+                <SideBySideView chunks={translatedChunks} />
+              )
+            ) : null}
           </section>
         ) : (
           <EmptyState
@@ -448,7 +567,7 @@ export default function HomePage() {
         onClose={() => setIsSettingsOpen(false)}
         apiKeyDraft={apiKeyDraft}
         rememberKey={rememberKey}
-        statusLabel={usingCustomKey ? "Your OpenRouter key" : "Default app key"}
+        statusLabel={usingCustomKey ? "Your PPQ key" : "Default app key"}
         onApiKeyDraftChange={setApiKeyDraft}
         onRememberKeyChange={setRememberKey}
         onSave={handleSaveApiKey}

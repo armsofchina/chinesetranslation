@@ -18,7 +18,7 @@ const themeInitScript = `
 export const metadata: Metadata = {
   title: "Chinese PDF/Text Translator",
   description:
-    "Upload Chinese PDFs or paste text to generate clean English translations with OpenRouter."
+    "Upload Chinese PDFs or paste text to generate clean English translations with PPQ."
 };
 
 export default function RootLayout({

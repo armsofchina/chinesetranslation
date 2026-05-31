@@ -2,9 +2,16 @@ export type ThemePreference = "light" | "dark" | "system";
 
 export type TranslationChunk = {
   id: string;
-  pageNumber?: number;
+  pageNumber: number;
   originalChinese: string;
   translatedEnglish: string;
+};
+
+export type TranslationPage = {
+  pageNumber: number;
+  originalText: string;
+  translatedText: string;
+  chunks: TranslationChunk[];
 };
 
 export type TranslateResponse = {
@@ -21,10 +28,13 @@ export type PdfExtractResult =
   | {
       kind: "success";
       pages: ExtractedPdfPage[];
+      totalPages: number;
     }
   | {
       kind: "scanned";
       message: string;
+      pages: ExtractedPdfPage[];
+      totalPages: number;
     }
   | {
       kind: "error";

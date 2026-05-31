@@ -10,7 +10,7 @@ export default function ErrorState({ message }: ErrorStateProps) {
   }
 
   const hints = [
-    "Check whether your OpenRouter key is valid and has available credits.",
+    "Check whether your PPQ key is valid and has available balance.",
     "If rate-limited, wait briefly and retry.",
     "If using PDF mode, confirm the file contains selectable text."
   ];

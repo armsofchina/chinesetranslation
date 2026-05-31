@@ -1,0 +1,213 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { ExtractedPdfPage, TranslationPage } from "@/lib/types";
+
+type PdfSideBySideViewProps = {
+  pdfUrl: string;
+  totalPages: number;
+  extractedPages: ExtractedPdfPage[];
+  translationPages: TranslationPage[];
+  scannedMessage?: string;
+};
+
+type ZoomValue = number | "fit-width";
+
+const MIN_ZOOM = 60;
+const MAX_ZOOM = 240;
+const ZOOM_STEP = 20;
+
+const clampZoom = (value: number): number => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
+
+export default function PdfSideBySideView({
+  pdfUrl,
+  totalPages,
+  extractedPages,
+  translationPages,
+  scannedMessage
+}: PdfSideBySideViewProps) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [zoom, setZoom] = useState<ZoomValue>("fit-width");
+  const [pdfViewerFailed, setPdfViewerFailed] = useState(false);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setZoom("fit-width");
+    setPdfViewerFailed(typeof navigator !== "undefined" && navigator.pdfViewerEnabled === false);
+  }, [pdfUrl]);
+
+  const pageOptions = useMemo(
+    () =>
+      Array.from({ length: Math.max(totalPages, 1) }, (_, index) => ({
+        value: index + 1,
+        label: `Page ${index + 1}`
+      })),
+    [totalPages]
+  );
+
+  const pageTranslationMap = useMemo(() => {
+    const map = new Map<number, TranslationPage>();
+    translationPages.forEach((page) => map.set(page.pageNumber, page));
+    return map;
+  }, [translationPages]);
+
+  const pageTextMap = useMemo(() => {
+    const map = new Map<number, string>();
+    extractedPages.forEach((page) => map.set(page.pageNumber, page.text));
+    return map;
+  }, [extractedPages]);
+
+  const currentTranslation = pageTranslationMap.get(currentPage);
+  const fallbackChineseText = pageTextMap.get(currentPage) || "";
+  const effectivePageCount = Math.max(totalPages, 1);
+  const hashZoom = zoom === "fit-width" ? "page-width" : zoom;
+  const viewerSrc = `${pdfUrl}#page=${currentPage}&zoom=${hashZoom}`;
+
+  const handlePrev = () => setCurrentPage((prev) => Math.max(1, prev - 1));
+  const handleNext = () => setCurrentPage((prev) => Math.min(effectivePageCount, prev + 1));
+
+  const zoomIn = () => {
+    setZoom((prev) => {
+      if (prev === "fit-width") {
+        return 120;
+      }
+      return clampZoom(prev + ZOOM_STEP);
+    });
+  };
+
+  const zoomOut = () => {
+    setZoom((prev) => {
+      if (prev === "fit-width") {
+        return 100;
+      }
+      return clampZoom(prev - ZOOM_STEP);
+    });
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-white/90 p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
+        <button
+          type="button"
+          onClick={handlePrev}
+          disabled={currentPage <= 1}
+          className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          Previous page
+        </button>
+        <button
+          type="button"
+          onClick={handleNext}
+          disabled={currentPage >= effectivePageCount}
+          className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          Next page
+        </button>
+
+        <label className="text-xs font-medium text-slate-600 dark:text-slate-300" htmlFor="pdf-page-select">
+          Page
+        </label>
+        <select
+          id="pdf-page-select"
+          value={currentPage}
+          onChange={(event) => setCurrentPage(Number(event.target.value))}
+          className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-sky-900"
+        >
+          {pageOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        <span className="text-xs text-slate-500 dark:text-slate-400">
+          Page {currentPage} of {effectivePageCount}
+        </span>
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={zoomOut}
+            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Zoom out
+          </button>
+          <button
+            type="button"
+            onClick={zoomIn}
+            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Zoom in
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom("fit-width")}
+            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Fit width
+          </button>
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            {zoom === "fit-width" ? "Fit width" : `${zoom}%`}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <article className="rounded-3xl border border-amber-200/70 bg-white/90 p-4 shadow-soft dark:border-slate-700 dark:bg-slate-900/75">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            Original PDF • Page {currentPage}
+          </p>
+
+          {pdfViewerFailed ? (
+            <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4 dark:border-slate-700 dark:bg-slate-950/60">
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                Inline PDF viewing is unavailable in this browser. Showing extracted text fallback for this page.
+              </p>
+              <p className="cn-text document-text mt-3 text-sm text-slate-800 dark:text-slate-100">
+                {fallbackChineseText || "No selectable text found on this page."}
+              </p>
+            </div>
+          ) : (
+            <iframe
+              src={viewerSrc}
+              title={`PDF page ${currentPage}`}
+              className="h-[72vh] min-h-[560px] w-full rounded-2xl border border-amber-100 bg-white dark:border-slate-700"
+              onError={() => setPdfViewerFailed(true)}
+            />
+          )}
+        </article>
+
+        <article className="rounded-3xl border border-amber-200/70 bg-white/90 p-4 shadow-soft dark:border-slate-700 dark:bg-slate-900/75">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            English Translation • Page {currentPage}
+          </p>
+
+          {scannedMessage ? (
+            <p className="document-text rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+              {scannedMessage}
+            </p>
+          ) : currentTranslation?.translatedText?.trim() ? (
+            <div
+              className="document-text text-sm leading-8 text-slate-800 dark:text-slate-100"
+              style={{ fontFamily: "var(--font-doc), Georgia, serif" }}
+            >
+              {currentTranslation.chunks.length > 0 ? (
+                currentTranslation.chunks.map((chunk) => (
+                  <p key={chunk.id} className="mb-4 last:mb-0">
+                    {chunk.translatedEnglish}
+                  </p>
+                ))
+              ) : (
+                <p>{currentTranslation.translatedText}</p>
+              )}
+            </div>
+          ) : (
+            <p className="document-text rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+              No translated text is available for this page yet.
+            </p>
+          )}
+        </article>
+      </div>
+    </section>
+  );
+}

@@ -3,8 +3,6 @@ import { PdfExtractResult } from "@/lib/types";
 const SCANNED_PDF_MESSAGE =
   "This PDF appears to contain scanned images rather than selectable text. OCR support can be added in a future version.";
 
-const CHINESE_CHAR_REGEX = /[\u3400-\u9FFF\uF900-\uFAFF]/;
-
 type PdfTextItem = {
   str?: string;
   hasEOL?: boolean;
@@ -35,10 +33,11 @@ export const extractSelectableTextFromPdf = async (file: File): Promise<PdfExtra
     const data = await file.arrayBuffer();
     const loadingTask = pdfjs.getDocument({ data });
     const pdfDoc = await loadingTask.promise;
+    const totalPages = pdfDoc.numPages;
 
     const pages: { pageNumber: number; text: string }[] = [];
 
-    for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber += 1) {
+    for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
       const page = await pdfDoc.getPage(pageNumber);
       const textContent = await page.getTextContent();
       const pageText = (textContent.items as PdfTextItem[])
@@ -52,17 +51,15 @@ export const extractSelectableTextFromPdf = async (file: File): Promise<PdfExtra
         .join("");
 
       const normalized = normalizePageText(pageText);
-      if (normalized) {
-        pages.push({ pageNumber, text: normalized });
-      }
+      pages.push({ pageNumber, text: normalized });
     }
 
-    const allText = pages.map((page) => page.text).join("\n");
-    if (!allText.trim() || !CHINESE_CHAR_REGEX.test(allText)) {
-      return { kind: "scanned", message: SCANNED_PDF_MESSAGE };
+    const hasSelectableText = pages.some((page) => Boolean(page.text.trim()));
+    if (!hasSelectableText) {
+      return { kind: "scanned", message: SCANNED_PDF_MESSAGE, pages, totalPages };
     }
 
-    return { kind: "success", pages };
+    return { kind: "success", pages, totalPages };
   } catch {
     return { kind: "error", message: "Unable to extract text from this PDF file." };
   }

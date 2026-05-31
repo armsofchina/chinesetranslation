@@ -58,14 +58,14 @@ export default function ApiKeySettings({
             Want higher translation limits?
           </p>
           <p className="mt-1 text-xs text-sky-800 dark:text-sky-200">
-            You can use your own OpenRouter API key. This gives you your own request/credit limits instead of relying on
-            the app default key.
+            You can use your own PPQ API key. This gives you your own request/credit limits instead of relying on the app
+            default key.
           </p>
 
           <div className="mt-3 space-y-2 text-xs text-slate-700 dark:text-slate-200">
-            <p className="font-semibold text-slate-900 dark:text-slate-100">Quick tutorial: get a free OpenRouter key</p>
-            <p>1) Create or sign in to your OpenRouter account at openrouter.ai.</p>
-            <p>2) Open the Keys page and click Create Key.</p>
+            <p className="font-semibold text-slate-900 dark:text-slate-100">Quick tutorial: get a PPQ key</p>
+            <p>1) Open PPQ API docs and sign in at ppq.ai/api-docs.</p>
+            <p>2) Create an API key from your PPQ account.</p>
             <p>3) Name your key (for example: Chinese Translator App).</p>
             <p>4) Copy the key once shown (it may only be visible one time).</p>
             <p>5) Paste it below and click Save.</p>
@@ -73,20 +73,20 @@ export default function ApiKeySettings({
 
           <div className="mt-3 flex flex-wrap gap-2">
             <a
-              href="https://openrouter.ai/"
+              href="https://ppq.ai/"
               target="_blank"
               rel="noreferrer"
               className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-100 dark:border-sky-700 dark:bg-slate-900 dark:text-sky-200 dark:hover:bg-slate-800"
             >
-              Open OpenRouter
+              Open PPQ
             </a>
             <a
-              href="https://openrouter.ai/keys"
+              href="https://ppq.ai/api-docs"
               target="_blank"
               rel="noreferrer"
               className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-100 dark:border-sky-700 dark:bg-slate-900 dark:text-sky-200 dark:hover:bg-slate-800"
             >
-              Go to API Keys
+              Go to API Docs
             </a>
           </div>
         </div>
@@ -94,19 +94,19 @@ export default function ApiKeySettings({
         <form onSubmit={handleSubmit} className="space-y-4">
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-800 dark:text-slate-100">
-              OpenRouter API Key
+              PPQ API Key
             </span>
             <input
               type="password"
               value={apiKeyDraft}
               onChange={(event) => onApiKeyDraftChange(event.target.value)}
-              placeholder="sk-or-v1-..."
+              placeholder="ppq_..."
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-sky-800"
             />
           </label>
 
           <p className="text-xs text-slate-600 dark:text-slate-300">
-            Optional. Add your own key if you want translations billed to your OpenRouter account.
+            Optional. Add your own key if you want translations billed to your PPQ account.
           </p>
 
           <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">

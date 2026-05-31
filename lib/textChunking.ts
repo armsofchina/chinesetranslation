@@ -61,6 +61,7 @@ export const createChunksFromPastedText = (text: string): TranslationChunk[] => 
 
   return merged.map((paragraph, index) => ({
     id: `text-${index + 1}`,
+    pageNumber: index + 1,
     originalChinese: paragraph,
     translatedEnglish: ""
   }));
@@ -70,18 +71,21 @@ export const createChunksFromPdfPages = (pages: ExtractedPdfPage[]): Translation
   const chunks: TranslationChunk[] = [];
 
   for (const page of pages) {
-    const pageParagraphs = mergeParagraphs(splitParagraphs(page.text));
-    pageParagraphs.forEach((paragraph, index) => {
-      chunks.push({
-        id: `pdf-p${page.pageNumber}-${index + 1}`,
-        pageNumber: page.pageNumber,
-        originalChinese: paragraph,
-        translatedEnglish: ""
-      });
-    });
+    chunks.push(...createChunksFromSinglePdfPage(page));
   }
 
   return chunks;
+};
+
+export const createChunksFromSinglePdfPage = (page: ExtractedPdfPage): TranslationChunk[] => {
+  const pageParagraphs = mergeParagraphs(splitParagraphs(page.text));
+
+  return pageParagraphs.map((paragraph, index) => ({
+    id: `pdf-p${page.pageNumber}-${index + 1}`,
+    pageNumber: page.pageNumber,
+    originalChinese: paragraph,
+    translatedEnglish: ""
+  }));
 };
 
 export const joinEnglishTranslation = (chunks: TranslationChunk[]): string =>
