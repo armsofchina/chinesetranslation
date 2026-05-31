@@ -19,6 +19,17 @@ body {
   @apply whitespace-pre-wrap leading-7;
 }
 
+.cn-text {
+  font-family: "Noto Sans CJK TC", "Noto Sans CJK SC", "PingFang TC", "PingFang SC", "Microsoft JhengHei",
+    "Microsoft YaHei", "Heiti TC", sans-serif;
+}
+
+button,
+input,
+textarea {
+  @apply focus-visible:outline-none;
+}
+
 ::selection {
   @apply bg-sky-200 text-slate-900 dark:bg-sky-700 dark:text-slate-100;
 }

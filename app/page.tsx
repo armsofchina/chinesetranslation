@@ -2,11 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ApiKeySettings from "@/components/ApiKeySettings";
+import AppHeader from "@/components/AppHeader";
+import EmptyState from "@/components/EmptyState";
+import ErrorState from "@/components/ErrorState";
 import ExportButtons from "@/components/ExportButtons";
 import FileUpload from "@/components/FileUpload";
+import InputModeTabs, { InputMode } from "@/components/InputModeTabs";
+import ProgressIndicator, { ProgressStep } from "@/components/ProgressIndicator";
 import SideBySideView from "@/components/SideBySideView";
 import TextInputPanel from "@/components/TextInputPanel";
-import ThemeToggle from "@/components/ThemeToggle";
+import Toast from "@/components/Toast";
 import TranslationTabs, { TranslationView } from "@/components/TranslationTabs";
 import { downloadEnglishPdf } from "@/lib/exportPdf";
 import { downloadTxt } from "@/lib/exportTxt";
@@ -17,8 +22,12 @@ import { ThemePreference, TranslationChunk, TranslateResponse } from "@/lib/type
 
 const USER_API_KEY_STORAGE = "translator-user-openrouter-key";
 
+const SCANNED_MESSAGE =
+  "This PDF does not appear to contain selectable text. It may be a scanned document. OCR support can be added in a future version.";
+
 export default function HomePage() {
   const [theme, setTheme] = useState<ThemePreference>("system");
+  const [inputMode, setInputMode] = useState<InputMode>("pdf");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [activeUserApiKey, setActiveUserApiKey] = useState("");
@@ -33,9 +42,12 @@ export default function HomePage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [processing, setProcessing] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [usedModel, setUsedModel] = useState("");
-  const [activityLog, setActivityLog] = useState<string[]>([]);
+  const [progressStep, setProgressStep] = useState<ProgressStep>("idle");
+  const [documentFontSize, setDocumentFontSize] = useState(16);
+
+  const [toastMessage, setToastMessage] = useState("");
+  const [toastVisible, setToastVisible] = useState(false);
 
   useEffect(() => {
     const savedTheme = getSavedThemePreference();
@@ -65,16 +77,20 @@ export default function HomePage() {
   }, [theme]);
 
   const sourceChunks = useMemo(() => {
-    if (pdfChunks.length > 0) {
+    if (inputMode === "pdf") {
       return pdfChunks;
     }
     return createChunksFromPastedText(pastedText);
-  }, [pdfChunks, pastedText]);
+  }, [inputMode, pdfChunks, pastedText]);
 
   const englishText = useMemo(() => joinEnglishTranslation(translatedChunks), [translatedChunks]);
+  const translateDisabled = processing || sourceChunks.length === 0;
+  const usingCustomKey = Boolean(activeUserApiKey.trim());
 
-  const pushActivity = (message: string) => {
-    setActivityLog((previous) => [`${new Date().toLocaleTimeString()} - ${message}`, ...previous].slice(0, 12));
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setToastVisible(true);
+    setTimeout(() => setToastVisible(false), 1800);
   };
 
   const handleFileSelect = async (file: File | null) => {
@@ -84,6 +100,7 @@ export default function HomePage() {
     if (!file) {
       setPdfName(undefined);
       setPdfChunks([]);
+      setProgressStep("idle");
       return;
     }
 
@@ -94,15 +111,18 @@ export default function HomePage() {
       return;
     }
 
+    setInputMode("pdf");
     setPdfName(file.name);
-    setStatusMessage("Extracting PDF text...");
+    setProgressStep("extracting");
+    setStatusMessage("Extracting text...");
 
     const result = await extractSelectableTextFromPdf(file);
 
     if (result.kind === "scanned") {
       setPdfChunks([]);
-      setErrorMessage(result.message);
+      setErrorMessage(SCANNED_MESSAGE);
       setStatusMessage("");
+      setProgressStep("idle");
       return;
     }
 
@@ -110,20 +130,21 @@ export default function HomePage() {
       setPdfChunks([]);
       setErrorMessage(result.message);
       setStatusMessage("");
+      setProgressStep("idle");
       return;
     }
 
-    setStatusMessage("Preparing text...");
+    setProgressStep("preparing");
+    setStatusMessage("Preparing chunks...");
     const chunks = createChunksFromPdfPages(result.pages);
 
     if (chunks.length === 0) {
-      setErrorMessage(
-        "This PDF appears to contain scanned images rather than selectable text. OCR support can be added in a future version."
-      );
+      setErrorMessage(SCANNED_MESSAGE);
     }
 
     setPdfChunks(chunks);
     setStatusMessage("");
+    setProgressStep("idle");
   };
 
   const handleSaveApiKey = () => {
@@ -152,30 +173,26 @@ export default function HomePage() {
 
   const handleTranslate = async () => {
     setErrorMessage("");
-    setCopied(false);
-    setActivityLog([]);
 
     if (sourceChunks.length === 0) {
-      setErrorMessage("Add a PDF or paste Chinese text before translating.");
+      setErrorMessage("Upload a PDF or paste Chinese text to begin.");
       return;
     }
 
     setProcessing(true);
-    setStatusMessage("Preparing text...");
     setTranslatedChunks([]);
-    pushActivity("Preparing translation plan...");
+    setProgressStep("preparing");
+    setStatusMessage("Preparing chunks...");
 
     await new Promise((resolve) => setTimeout(resolve, 120));
-    setStatusMessage("Translating...");
-    pushActivity(`Found ${sourceChunks.length} section(s) to translate.`);
 
     try {
       const completedChunks: TranslationChunk[] = [];
+      setProgressStep("translating");
 
       for (let index = 0; index < sourceChunks.length; index += 1) {
         const chunk = sourceChunks[index];
         setStatusMessage(`Translating section ${index + 1} of ${sourceChunks.length}...`);
-        pushActivity(`Analyzing section ${index + 1}/${sourceChunks.length}...`);
 
         const response = await fetch("/api/translate", {
           method: "POST",
@@ -201,17 +218,23 @@ export default function HomePage() {
         completedChunks.push(translatedChunk);
         setTranslatedChunks([...completedChunks]);
         setUsedModel(payload.model);
-        pushActivity(`Completed section ${index + 1}/${sourceChunks.length}.`);
       }
 
-      setActiveView("english");
+      setProgressStep("generating");
       setStatusMessage("Generating output...");
-      pushActivity("Polishing final English output...");
-      setTimeout(() => setStatusMessage(""), 500);
-      pushActivity("Translation complete.");
+
+      await new Promise((resolve) => setTimeout(resolve, 280));
+
+      setActiveView("english");
+      setProgressStep("done");
+      setStatusMessage("Translation complete.");
+      setTimeout(() => {
+        setStatusMessage("");
+        setProgressStep("idle");
+      }, 1000);
     } catch (error) {
       setStatusMessage("");
-      pushActivity("Translation stopped due to an error.");
+      setProgressStep("idle");
       setErrorMessage(error instanceof Error ? error.message : "Translation failed.");
     } finally {
       setProcessing(false);
@@ -225,9 +248,9 @@ export default function HomePage() {
     setTranslatedChunks([]);
     setStatusMessage("");
     setErrorMessage("");
-    setCopied(false);
     setUsedModel("");
-    setActivityLog([]);
+    setProgressStep("idle");
+    setDocumentFontSize(16);
   };
 
   const handleCopyEnglish = async () => {
@@ -237,8 +260,7 @@ export default function HomePage() {
 
     try {
       await navigator.clipboard.writeText(englishText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
+      showToast("Copied to clipboard.");
     } catch {
       setErrorMessage("Unable to copy to clipboard on this browser.");
     }
@@ -247,6 +269,7 @@ export default function HomePage() {
   const handleDownloadTxt = () => {
     try {
       downloadTxt(englishText);
+      showToast("TXT downloaded");
     } catch {
       setErrorMessage("TXT export failed.");
     }
@@ -255,102 +278,102 @@ export default function HomePage() {
   const handleDownloadPdf = () => {
     try {
       downloadEnglishPdf(englishText);
+      showToast("PDF downloaded");
     } catch {
       setErrorMessage("PDF export failed.");
     }
   };
 
-  const usingCustomKey = Boolean(activeUserApiKey.trim());
-
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#cde5ff,_#f8fafc_42%,_#f8fafc)] px-4 py-10 dark:bg-[radial-gradient(circle_at_top,_#1f3655,_#020617_45%,_#020617)]">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#dce9f8_0,_#f6f8fc_36%,_#f8fafc_100%)] px-4 py-8 dark:bg-[radial-gradient(circle_at_top,_#1f314a_0,_#0b1220_35%,_#020617_100%)]">
       <div className="mx-auto max-w-6xl space-y-6">
-        <header className="rounded-3xl border border-slate-200 bg-white/80 p-6 shadow-soft backdrop-blur dark:border-slate-800 dark:bg-slate-900/70">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-2xl">
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Chinese PDF/Text Translator</h1>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                Upload a Chinese PDF or paste Chinese text to generate a clean English translation.
-              </p>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                Key mode: {usingCustomKey ? "Using your OpenRouter key" : "Using default app key"}
-              </p>
-            </div>
+        <AppHeader theme={theme} onThemeChange={setTheme} onOpenApiSettings={() => setIsSettingsOpen(true)} />
 
-            <div className="flex flex-wrap items-center gap-2">
-              <ThemeToggle value={theme} onChange={setTheme} />
-              <button
-                type="button"
-                onClick={() => setIsSettingsOpen(true)}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                API Key Settings
-              </button>
-            </div>
+        <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900/80">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Add Chinese Text</h2>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+            Choose one input method, then translate to English.
+          </p>
+
+          <div className="mt-5">
+            <InputModeTabs value={inputMode} onChange={setInputMode} />
           </div>
 
-          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <FileUpload fileName={pdfName} onFileSelect={handleFileSelect} />
-            <TextInputPanel value={pastedText} onChange={setPastedText} />
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950/60">
+            {inputMode === "pdf" ? (
+              <FileUpload fileName={pdfName} onFileSelect={handleFileSelect} />
+            ) : (
+              <TextInputPanel value={pastedText} onChange={setPastedText} onClear={() => setPastedText("")} />
+            )}
           </div>
 
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={handleTranslate}
-              disabled={processing}
-              className="rounded-xl bg-sky-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={translateDisabled}
+              className="rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-slate-900"
             >
-              {processing ? "Working..." : "Translate"}
+              {processing ? "Translating..." : "Translate to English"}
             </button>
             <button
               type="button"
               onClick={handleReset}
-              className="rounded-xl border border-slate-300 bg-white px-5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-900"
             >
-              Clear / Reset
+              Reset
             </button>
-            {statusMessage ? <span className="text-sm text-slate-600 dark:text-slate-300">{statusMessage}</span> : null}
+
+            <span className="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              {usingCustomKey ? "Using your OpenRouter key" : "Using default app key"}
+            </span>
+
             {usedModel ? <span className="text-xs text-slate-500 dark:text-slate-400">Model: {usedModel}</span> : null}
+            {statusMessage ? <span className="text-xs text-slate-500 dark:text-slate-400">{statusMessage}</span> : null}
           </div>
+        </section>
 
-          {(processing || activityLog.length > 0) && (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/70">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Translation Activity
-              </p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Live progress feedback. This shows translation steps, not private model chain-of-thought.
-              </p>
-              <div className="mt-3 max-h-44 space-y-1 overflow-auto rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-950/70">
-                {processing ? <p className="animate-pulse text-sky-700 dark:text-sky-300">Thinking...</p> : null}
-                {activityLog.map((line, index) => (
-                  <p key={`${line}-${index}`} className="text-slate-700 dark:text-slate-200">
-                    {line}
-                  </p>
-                ))}
-              </div>
-            </div>
-          )}
+        <ProgressIndicator step={progressStep} processing={processing} />
 
-          {errorMessage ? (
-            <div className="mt-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200">
-              {errorMessage}
-            </div>
-          ) : null}
-        </header>
+        <ErrorState message={errorMessage} />
 
         {translatedChunks.length > 0 ? (
-          <section className="space-y-4 rounded-3xl border border-slate-200 bg-white/80 p-6 shadow-soft backdrop-blur dark:border-slate-800 dark:bg-slate-900/70">
+          <section className="space-y-4 rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900/80">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <TranslationTabs active={activeView} onChange={setActiveView} />
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Translation Results</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Review, copy, and download your translation.</p>
+              </div>
               <ExportButtons
                 onCopy={handleCopyEnglish}
                 onDownloadTxt={handleDownloadTxt}
                 onDownloadPdf={handleDownloadPdf}
-                copied={copied}
+                copied={toastVisible && toastMessage === "Copied to clipboard."}
                 disabled={!englishText}
               />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <TranslationTabs active={activeView} onChange={setActiveView} />
+
+              {activeView === "english" ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDocumentFontSize((prev) => Math.max(14, prev - 1))}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    A-
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocumentFontSize((prev) => Math.min(22, prev + 1))}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    A+
+                  </button>
+                </div>
+              ) : null}
             </div>
 
             {activeView === "original" ? (
@@ -358,28 +381,28 @@ export default function HomePage() {
                 {sourceChunks.map((chunk) => (
                   <article
                     key={chunk.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/70"
+                    className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/70"
                   >
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      Original Chinese {chunk.pageNumber ? `(Page ${chunk.pageNumber})` : ""}
+                      {chunk.pageNumber ? `Page ${chunk.pageNumber}` : "Original Chinese"}
                     </p>
-                    <p className="document-text text-sm text-slate-800 dark:text-slate-100">{chunk.originalChinese}</p>
+                    <p className="cn-text document-text text-[15px] text-slate-800 dark:text-slate-100">{chunk.originalChinese}</p>
                   </article>
                 ))}
               </div>
             ) : null}
 
             {activeView === "english" ? (
-              <article className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900/70">
-                <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <article className="mx-auto w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-7 dark:border-slate-800 dark:bg-slate-900/70">
+                <p className="mb-5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   English Translation
                 </p>
                 <div
-                  className="document-text text-[15px] text-slate-800 dark:text-slate-100"
-                  style={{ fontFamily: "var(--font-doc), Georgia, serif" }}
+                  className="document-text text-slate-800 dark:text-slate-100"
+                  style={{ fontFamily: "var(--font-doc), Georgia, serif", fontSize: `${documentFontSize}px`, lineHeight: 1.9 }}
                 >
                   {translatedChunks.map((chunk) => (
-                    <p key={chunk.id} className="mb-4 last:mb-0">
+                    <p key={chunk.id} className="mb-5 last:mb-0">
                       {chunk.translatedEnglish}
                     </p>
                   ))}
@@ -389,7 +412,12 @@ export default function HomePage() {
 
             {activeView === "side-by-side" ? <SideBySideView chunks={translatedChunks} /> : null}
           </section>
-        ) : null}
+        ) : (
+          <EmptyState
+            title="Upload a PDF or paste Chinese text to begin."
+            description="After translation, you can switch views, copy the English output, and download TXT or PDF."
+          />
+        )}
       </div>
 
       <ApiKeySettings
@@ -397,12 +425,14 @@ export default function HomePage() {
         onClose={() => setIsSettingsOpen(false)}
         apiKeyDraft={apiKeyDraft}
         rememberKey={rememberKey}
-        statusLabel={usingCustomKey ? "Using your OpenRouter key" : "Using default app key"}
+        statusLabel={usingCustomKey ? "Your OpenRouter key" : "Default app key"}
         onApiKeyDraftChange={setApiKeyDraft}
         onRememberKeyChange={setRememberKey}
         onSave={handleSaveApiKey}
         onClearSaved={handleClearSavedKey}
       />
+
+      <Toast message={toastMessage} visible={toastVisible} />
     </main>
   );
 }
