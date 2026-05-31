@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import StructuredTranslationBody from "@/components/StructuredTranslationBody";
 import { parseTranslationText } from "@/lib/footnotes";
 import { ExtractedPdfPage, TranslationPage } from "@/lib/types";
 
@@ -193,11 +194,7 @@ export default function PdfSideBySideView({
               className="document-text text-sm leading-8 text-slate-800 dark:text-slate-100"
               style={{ fontFamily: "var(--font-doc), Georgia, serif" }}
             >
-              {parsedTranslation.bodyParagraphs.map((paragraph, index) => (
-                <p key={`body-${index + 1}`} className="mb-4 last:mb-0">
-                  {paragraph}
-                </p>
-              ))}
+              <StructuredTranslationBody paragraphs={parsedTranslation.bodyParagraphs} compact />
 
               {parsedTranslation.footnotes.length > 0 ? (
                 <section className="mt-6 rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4 dark:border-amber-900/80 dark:bg-amber-950/30">

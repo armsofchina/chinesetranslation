@@ -11,6 +11,7 @@ import InputModeTabs, { InputMode } from "@/components/InputModeTabs";
 import PdfSideBySideView from "@/components/PdfSideBySideView";
 import ProgressIndicator, { ProgressStep } from "@/components/ProgressIndicator";
 import SideBySideView from "@/components/SideBySideView";
+import StructuredTranslationBody from "@/components/StructuredTranslationBody";
 import TextInputPanel from "@/components/TextInputPanel";
 import Toast from "@/components/Toast";
 import TranslationTabs, { TranslationView } from "@/components/TranslationTabs";
@@ -534,11 +535,7 @@ export default function HomePage() {
                   className="document-text text-slate-800 dark:text-slate-100"
                   style={{ fontFamily: "var(--font-doc), Georgia, serif", fontSize: `${documentFontSize}px`, lineHeight: 1.9 }}
                 >
-                  {parsedEnglishText.bodyParagraphs.map((paragraph, index) => (
-                    <p key={`english-body-${index + 1}`} className="mb-5 last:mb-0">
-                      {paragraph}
-                    </p>
-                  ))}
+                  <StructuredTranslationBody paragraphs={parsedEnglishText.bodyParagraphs} />
 
                   {parsedEnglishText.footnotes.length > 0 ? (
                     <section className="mt-8 rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4 dark:border-amber-900/80 dark:bg-amber-950/30">

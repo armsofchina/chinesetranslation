@@ -1,5 +1,6 @@
 "use client";
 
+import StructuredTranslationBody from "@/components/StructuredTranslationBody";
 import { parseTranslationText } from "@/lib/footnotes";
 import { TranslationChunk } from "@/lib/types";
 
@@ -36,11 +37,7 @@ export default function SideBySideView({ chunks }: SideBySideViewProps) {
                 className="document-text text-sm leading-7 text-slate-800 dark:text-slate-100"
                 style={{ fontFamily: "var(--font-doc), Georgia, serif" }}
               >
-                {parsed.bodyParagraphs.map((paragraph, index) => (
-                  <p key={`chunk-${chunk.id}-body-${index + 1}`} className="mb-3 last:mb-0">
-                    {paragraph}
-                  </p>
-                ))}
+                <StructuredTranslationBody paragraphs={parsed.bodyParagraphs} compact />
 
                 {parsed.footnotes.length > 0 ? (
                   <section className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
