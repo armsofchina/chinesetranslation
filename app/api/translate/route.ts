@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DEFAULT_MODEL, PpqRequestError, translateWithPpq } from "@/lib/ppq";
-import { TranslationChunk } from "@/lib/types";
+import { DEFAULT_MODEL, PpqRequestError, translateImageWithPpq, translateWithPpq } from "@/lib/ppq";
+import { TranslateImageTask, TranslationChunk } from "@/lib/types";
 
 type TranslateRequestBody = {
-  chunks: TranslationChunk[];
+  chunks?: TranslationChunk[];
+  imageTasks?: TranslateImageTask[];
   userApiKey?: string;
   userPpqApiKey?: string;
   userOpenRouterApiKey?: string;
@@ -30,12 +31,14 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as TranslateRequestBody;
     const incomingChunks = Array.isArray(body?.chunks) ? body.chunks : [];
+    const incomingImageTasks = Array.isArray(body?.imageTasks) ? body.imageTasks : [];
 
-    if (incomingChunks.length === 0) {
-      return NextResponse.json({ error: "No text chunks provided for translation." }, { status: 400 });
+    if (incomingChunks.length === 0 && incomingImageTasks.length === 0) {
+      return NextResponse.json({ error: "No text or image inputs provided for translation." }, { status: 400 });
     }
 
     const model = body.model?.trim() || DEFAULT_MODEL;
+    const imageModel = process.env.PPQ_VISION_MODEL?.trim() || model;
 
     // Default app key is loaded only on the server from process.env.
     const defaultServerKey = process.env.PPQ_API_KEY?.trim() || process.env.OPENROUTER_API_KEY?.trim();
@@ -53,7 +56,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const translatedChunks = await Promise.all(
+    const translatedTextChunks = await Promise.all(
       incomingChunks.map(async (chunk) => {
         const translatedEnglish = await translateWithPpq({
           apiKey: selectedApiKey,
@@ -69,6 +72,25 @@ export async function POST(request: NextRequest) {
         } satisfies TranslationChunk;
       })
     );
+
+    const translatedImageChunks = await Promise.all(
+      incomingImageTasks.map(async (task) => {
+        const translatedEnglish = await translateImageWithPpq({
+          apiKey: selectedApiKey,
+          model: imageModel,
+          imageDataUrl: task.imageDataUrl
+        });
+
+        return {
+          id: task.id,
+          pageNumber: task.pageNumber,
+          originalChinese: "[Image-based source text]",
+          translatedEnglish
+        } satisfies TranslationChunk;
+      })
+    );
+
+    const translatedChunks = [...translatedTextChunks, ...translatedImageChunks];
 
     return NextResponse.json({ chunks: translatedChunks, model });
   } catch (error) {

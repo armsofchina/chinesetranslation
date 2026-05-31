@@ -185,11 +185,7 @@ export default function PdfSideBySideView({
             English Translation • Page {currentPage}
           </p>
 
-          {scannedMessage ? (
-            <p className="document-text rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
-              {scannedMessage}
-            </p>
-          ) : currentTranslation?.translatedText?.trim() ? (
+          {currentTranslation?.translatedText?.trim() ? (
             <div
               className="document-text text-sm leading-8 text-slate-800 dark:text-slate-100"
               style={{ fontFamily: "var(--font-doc), Georgia, serif" }}
@@ -212,6 +208,10 @@ export default function PdfSideBySideView({
                 </section>
               ) : null}
             </div>
+          ) : scannedMessage ? (
+            <p className="document-text rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+              {scannedMessage}
+            </p>
           ) : (
             <p className="document-text rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
               No translated text is available for this page yet.

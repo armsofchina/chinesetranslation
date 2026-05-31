@@ -1,6 +1,6 @@
 "use client";
 
-export type InputMode = "pdf" | "text";
+export type InputMode = "pdf" | "text" | "image";
 
 type InputModeTabsProps = {
   value: InputMode;
@@ -14,6 +14,11 @@ const OPTIONS: Array<{ id: InputMode; label: string; description: string }> = [
     description: "Extract from selectable Chinese PDFs"
   },
   {
+    id: "image",
+    label: "Upload Image",
+    description: "OCR + translate non-selectable text"
+  },
+  {
     id: "text",
     label: "Paste Text",
     description: "Paste Traditional or Simplified Chinese"
@@ -22,7 +27,7 @@ const OPTIONS: Array<{ id: InputMode; label: string; description: string }> = [
 
 export default function InputModeTabs({ value, onChange }: InputModeTabsProps) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-3">
       {OPTIONS.map((option) => (
         <button
           key={option.id}

@@ -21,8 +21,8 @@ export default function AppHeader({ theme, onThemeChange, onOpenApiSettings }: A
             Chinese PDF/Text Translator
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            Translate selectable Chinese PDFs or pasted Chinese text, then review results in reading-friendly layouts and
-            exportable formats.
+            Translate selectable PDFs, scanned PDFs, uploaded images, or pasted Chinese text, then review results in
+            reading-friendly layouts and exportable formats.
           </p>
         </div>
 

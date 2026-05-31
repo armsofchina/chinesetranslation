@@ -5,7 +5,8 @@ A polished Next.js MVP for translating Traditional and Simplified Chinese text i
 ## Features
 
 - Upload Chinese PDF files and extract selectable text using PDF.js
-- Detect scanned/image-only PDFs and show a clear OCR notice
+- OCR + translate scanned/image-only PDF pages using PPQ vision models
+- Upload images (PNG/JPG/WEBP/BMP/TIFF) and translate non-selectable text
 - Paste Chinese text directly and translate without uploading files
 - Translate through PPQ using a secure backend route
 - Use default server API key or optional user-provided PPQ key
@@ -42,6 +43,7 @@ cp .env.local.example .env.local
 ```env
 PPQ_API_KEY=your_ppq_key_here
 PPQ_MODEL=claude-sonnet-4-5
+PPQ_VISION_MODEL=private/qwen3-vl-30b
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
