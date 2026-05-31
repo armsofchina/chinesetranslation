@@ -70,3 +70,4 @@ npm run dev
 - Do not log API keys in server logs or client logs.
 - Use HTTPS in production.
 - Uploaded files are handled in-memory for extraction and are not persisted by the app.
+# chinesetranslation
