@@ -4,6 +4,14 @@
 
 :root {
   color-scheme: light;
+  --page-bg:
+    radial-gradient(circle at top left, rgba(174, 96, 62, 0.24), transparent 24rem),
+    radial-gradient(circle at top right, rgba(55, 99, 104, 0.2), transparent 26rem),
+    linear-gradient(180deg, #f8f1e3 0%, #efe4cf 52%, #dbc7a7 100%);
+  --page-bg-dark:
+    radial-gradient(circle at top left, rgba(148, 90, 48, 0.2), transparent 26rem),
+    radial-gradient(circle at top right, rgba(42, 97, 106, 0.24), transparent 28rem),
+    linear-gradient(180deg, #1b1b1b 0%, #141417 48%, #101215 100%);
 }
 
 .dark:root {
@@ -11,8 +19,14 @@
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+  @apply text-slate-900 antialiased dark:text-slate-100;
   font-family: var(--font-ui), "Avenir Next", "Segoe UI", sans-serif;
+  background: var(--page-bg);
+  min-height: 100vh;
+}
+
+.dark body {
+  background: var(--page-bg-dark);
 }
 
 .document-text {

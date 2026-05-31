@@ -29,7 +29,7 @@ export default function ProgressIndicator({ step, processing }: ProgressIndicato
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/80">
+    <section className="rounded-3xl border border-amber-200/70 bg-white/85 p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900/75">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Translation progress</p>
         {processing ? <span className="text-xs text-slate-500 dark:text-slate-400">Working...</span> : null}
@@ -47,12 +47,12 @@ export default function ProgressIndicator({ step, processing }: ProgressIndicato
           return (
             <div
               key={item.id}
-              className={`rounded-xl border px-3 py-2 text-xs transition ${
+              className={`rounded-2xl border px-3 py-2 text-xs transition ${
                 isActive
-                  ? "border-sky-500 bg-sky-50 text-sky-900 dark:border-sky-500 dark:bg-sky-900/40 dark:text-sky-100"
+                  ? "border-amber-500 bg-amber-100 text-amber-900 dark:border-amber-500 dark:bg-amber-900/40 dark:text-amber-100"
                   : isComplete
                     ? "border-emerald-500/40 bg-emerald-50 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-900/30 dark:text-emerald-100"
-                    : "border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400"
+                    : "border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400"
               }`}
             >
               <p className="font-semibold">{item.label}</p>

@@ -37,18 +37,24 @@ export default function FileUpload({ fileName, onFileSelect }: FileUploadProps) 
           const file = event.dataTransfer.files?.[0];
           onFileSelect(file ?? null);
         }}
-        className={`mt-3 block cursor-pointer rounded-2xl border-2 border-dashed px-6 py-9 text-center transition focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 dark:focus-within:ring-offset-slate-900 ${
+        className={`mt-3 block cursor-pointer rounded-3xl border-2 border-dashed px-6 py-10 text-center transition focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 dark:focus-within:ring-offset-slate-900 ${
           isDragging
-            ? "border-sky-500 bg-sky-50 dark:bg-sky-900/30"
-            : "border-slate-300 bg-slate-50 hover:border-sky-400 hover:bg-sky-50/50 dark:border-slate-700 dark:bg-slate-950/50 dark:hover:border-sky-500 dark:hover:bg-sky-900/20"
+            ? "border-amber-500 bg-amber-100/70 dark:bg-amber-900/30"
+            : "border-amber-200 bg-white/90 hover:border-amber-400 hover:bg-amber-50/80 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:border-amber-500 dark:hover:bg-amber-900/20"
         }`}
       >
-        <p className="text-sm font-medium text-slate-800 dark:text-slate-100">Drag and drop your PDF here</p>
+        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Drag and drop your PDF here</p>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">or click to browse files</p>
-        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">PDF only</p>
+        <p className="mt-4 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          PDF only
+        </p>
       </label>
 
-      {fileName ? <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">Selected file: {fileName}</p> : null}
+      {fileName ? (
+        <p className="mt-3 text-sm text-slate-700 dark:text-slate-200">
+          Selected file: <span className="font-medium">{fileName}</span>
+        </p>
+      ) : null}
 
       <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
         Selectable PDFs are supported. Scanned image-only PDFs may require OCR in a future version.
