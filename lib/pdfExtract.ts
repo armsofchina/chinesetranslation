@@ -1,4 +1,5 @@
 import { PdfExtractResult } from "@/lib/types";
+import { cleanExtractedChineseText } from "@/lib/chineseTextCleanup";
 
 const SCANNED_PDF_MESSAGE =
   "This PDF appears to contain scanned images rather than selectable text. OCR support can be added in a future version.";
@@ -20,11 +21,12 @@ const ensureWorker = async () => {
 };
 
 const normalizePageText = (text: string): string =>
-  text
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+  cleanExtractedChineseText(
+    text
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/[ \t]{2,}/g, " ")
+  );
 
 export const extractSelectableTextFromPdf = async (file: File): Promise<PdfExtractResult> => {
   try {
