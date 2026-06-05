@@ -24,6 +24,12 @@ type TranslateChunkInput = {
   text: string;
 };
 
+type TranslateImageInput = {
+  apiKey: string;
+  model: string;
+  imageDataUrl: string;
+};
+
 const extractContentText = (content: unknown): string => {
   if (typeof content === "string") {
     return content.trim();
@@ -43,6 +49,139 @@ const extractContentText = (content: unknown): string => {
   }
 
   return "";
+};
+
+const SSE_DATA_PREFIX = "data:";
+
+const extractDeltaText = (delta: unknown): string => {
+  if (!delta || typeof delta !== "object") {
+    return "";
+  }
+  const content = (delta as { content?: unknown }).content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return "";
+        }
+        const text = (item as { text?: string }).text;
+        return typeof text === "string" ? text : "";
+      })
+      .join("");
+  }
+  return "";
+};
+
+const requestPpqStream = async (apiKey: string, requestBody: Record<string, unknown>): Promise<Response> => {
+  const response = await fetch(PPQ_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ ...requestBody, stream: true })
+  });
+
+  if (!response.ok || !response.body) {
+    const payload = await response.json().catch(() => null);
+    const message = payload?.error?.message || payload?.message || "Translation request failed.";
+    throw new PpqRequestError(message, response.ok ? 502 : response.status);
+  }
+
+  return response;
+};
+
+/**
+ * Streams an OpenAI-compatible SSE response, yielding incremental text deltas
+ * as the model produces them.
+ */
+async function* streamPpqDeltas(response: Response): AsyncGenerator<string, void, unknown> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      // Keep the last (possibly partial) line in the buffer.
+      buffer = lines.pop() ?? "";
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || !line.startsWith(SSE_DATA_PREFIX)) {
+          continue;
+        }
+
+        const data = line.slice(SSE_DATA_PREFIX.length).trim();
+        if (data === "[DONE]") {
+          return;
+        }
+
+        let json: any;
+        try {
+          json = JSON.parse(data);
+        } catch {
+          continue;
+        }
+
+        const delta = extractDeltaText(json?.choices?.[0]?.delta);
+        if (delta) {
+          yield delta;
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export const streamTranslateWithPpq = async ({
+  apiKey,
+  model,
+  text
+}: TranslateChunkInput): Promise<AsyncGenerator<string, void, unknown>> => {
+  const response = await requestPpqStream(apiKey, {
+    model,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: `Translate this Chinese text into clean English:\n\n${text}` }
+    ],
+    temperature: 0.2
+  });
+
+  return streamPpqDeltas(response);
+};
+
+export const streamTranslateImageWithPpq = async ({
+  apiKey,
+  model,
+  imageDataUrl
+}: TranslateImageInput): Promise<AsyncGenerator<string, void, unknown>> => {
+  const response = await requestPpqStream(apiKey, {
+    model,
+    messages: [
+      { role: "system", content: VISION_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Translate all readable Chinese text in this image into clean English." },
+          { type: "image_url", image_url: { url: imageDataUrl } }
+        ]
+      }
+    ],
+    temperature: 0.1
+  });
+
+  return streamPpqDeltas(response);
 };
 
 export const translateWithPpq = async ({ apiKey, model, text }: TranslateChunkInput): Promise<string> => {
@@ -82,12 +221,6 @@ export const translateWithPpq = async ({ apiKey, model, text }: TranslateChunkIn
   }
 
   return normalizeTranslationFootnotes(content);
-};
-
-type TranslateImageInput = {
-  apiKey: string;
-  model: string;
-  imageDataUrl: string;
 };
 
 export const translateImageWithPpq = async ({ apiKey, model, imageDataUrl }: TranslateImageInput): Promise<string> => {
