@@ -1,5 +1,6 @@
 "use client";
 
+import ChineseSourceBody from "@/components/ChineseSourceBody";
 import StructuredTranslationBody from "@/components/StructuredTranslationBody";
 import { parseTranslationText } from "@/lib/footnotes";
 import { TranslationChunk } from "@/lib/types";
@@ -27,7 +28,9 @@ export default function SideBySideView({ chunks }: SideBySideViewProps) {
           >
             <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-3 dark:border-slate-700 dark:bg-slate-950/60">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Original Chinese</p>
-              <p className="document-text text-sm leading-7 text-slate-800 dark:text-slate-100">{chunk.originalChinese}</p>
+              <div className="text-sm text-slate-800 dark:text-slate-100">
+                <ChineseSourceBody text={chunk.originalChinese} compact />
+              </div>
             </div>
             <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-3 dark:border-slate-700 dark:bg-slate-950/60">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">

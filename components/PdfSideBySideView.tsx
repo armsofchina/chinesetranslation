@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import ChineseSourceBody from "@/components/ChineseSourceBody";
 import StructuredTranslationBody from "@/components/StructuredTranslationBody";
 import { parseTranslationText } from "@/lib/footnotes";
 import { ExtractedPdfPage, TranslationPage } from "@/lib/types";
@@ -166,9 +167,13 @@ export default function PdfSideBySideView({
               <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
                 Inline PDF viewing is unavailable in this browser. Showing extracted text fallback for this page.
               </p>
-              <p className="cn-text document-text mt-3 text-sm text-slate-800 dark:text-slate-100">
-                {fallbackChineseText || "No selectable text found on this page."}
-              </p>
+              <div className="mt-3 text-sm text-slate-800 dark:text-slate-100">
+                {fallbackChineseText ? (
+                  <ChineseSourceBody text={fallbackChineseText} compact />
+                ) : (
+                  <p className="cn-text text-sm text-slate-500 dark:text-slate-400">No selectable text found on this page.</p>
+                )}
+              </div>
             </div>
           ) : (
             <iframe

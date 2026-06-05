@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ApiKeySettings from "@/components/ApiKeySettings";
 import AppHeader from "@/components/AppHeader";
+import ChineseSourceBody from "@/components/ChineseSourceBody";
 import EmptyState from "@/components/EmptyState";
 import ErrorState from "@/components/ErrorState";
 import ExportButtons from "@/components/ExportButtons";
@@ -709,7 +710,7 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <TranslationTabs active={activeView} onChange={setActiveView} />
 
-              {activeView === "english" ? (
+              {activeView === "english" || (activeView === "original" && inputMode !== "image") ? (
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -739,20 +740,40 @@ export default function HomePage() {
                     <p className="text-sm text-slate-600 dark:text-slate-300">No image loaded.</p>
                   )}
                 </article>
-              ) : (
+              ) : inputMode === "pdf" ? (
                 <div className="space-y-4">
-                  {sourceChunks.map((chunk) => (
+                  {pdfPages.map((page) => (
                     <article
-                      key={chunk.id}
-                      className="rounded-3xl border border-amber-200/70 bg-white/90 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70"
+                      key={`orig-page-${page.pageNumber}`}
+                      className="rounded-3xl border border-amber-200/70 bg-white/90 p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900/70"
                     >
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        {inputMode === "pdf" ? `Page ${chunk.pageNumber}` : "Original Chinese"}
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        第 {page.pageNumber} 頁 · Page {page.pageNumber}
                       </p>
-                      <p className="cn-text document-text text-[15px] text-slate-800 dark:text-slate-100">{chunk.originalChinese}</p>
+                      <div
+                        className="text-slate-800 dark:text-slate-100"
+                        style={{ fontSize: `${documentFontSize}px` }}
+                      >
+                        {page.text.trim() ? (
+                          <ChineseSourceBody text={page.text} />
+                        ) : (
+                          <p className="cn-text text-sm text-slate-500 dark:text-slate-400">
+                            此頁未偵測到可選取的文字（可能為掃描圖檔）。
+                          </p>
+                        )}
+                      </div>
                     </article>
                   ))}
                 </div>
+              ) : (
+                <article className="mx-auto w-full max-w-4xl rounded-3xl border border-amber-200/70 bg-white/90 p-7 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+                  <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Original Chinese
+                  </p>
+                  <div className="text-slate-800 dark:text-slate-100" style={{ fontSize: `${documentFontSize}px` }}>
+                    <ChineseSourceBody text={pastedText} />
+                  </div>
+                </article>
               )
             ) : null}
 

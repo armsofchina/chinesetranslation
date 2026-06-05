@@ -34,8 +34,32 @@ body {
 }
 
 .cn-text {
-  font-family: "Noto Sans CJK TC", "Noto Sans CJK SC", "PingFang TC", "PingFang SC", "Microsoft JhengHei",
-    "Microsoft YaHei", "Heiti TC", sans-serif;
+  font-family: "Noto Serif CJK TC", "Noto Serif CJK SC", "Source Han Serif TC", "Source Han Serif SC",
+    "Songti TC", "Songti SC", "Noto Sans CJK TC", "Noto Sans CJK SC", "PingFang TC", "PingFang SC",
+    "Microsoft JhengHei", "Microsoft YaHei", "Heiti TC", serif;
+  /* Native CJK reading conveniences. */
+  line-break: strict;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  text-align: justify;
+  text-justify: inter-character;
+  font-variant-east-asian: proportional-width;
+  hanging-punctuation: allow-end;
+}
+
+/* Body paragraphs read more naturally with an indented first line. */
+.cn-paragraph {
+  text-indent: 2em;
+}
+
+/* Headings, list items and table cells should not be indented. */
+.cn-text h1,
+.cn-text h2,
+.cn-text h3,
+.cn-text li,
+.cn-text td,
+.cn-text th {
+  text-indent: 0;
 }
 
 button,
