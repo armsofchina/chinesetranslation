@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import ApiKeySettings from "@/components/ApiKeySettings";
 import AppHeader from "@/components/AppHeader";
 import ChineseSourceBody from "@/components/ChineseSourceBody";
+import DomainSelector from "@/components/DomainSelector";
 import EmptyState from "@/components/EmptyState";
+import EntityGlossary, { GlossaryEntry } from "@/components/EntityGlossary";
 import ErrorState from "@/components/ErrorState";
 import ExportButtons from "@/components/ExportButtons";
 import FileUpload from "@/components/FileUpload";
@@ -21,9 +23,12 @@ import TranslationTabs, { TranslationView } from "@/components/TranslationTabs";
 import { downloadBilingualHtml } from "@/lib/exportHtml";
 import { downloadEnglishPdf } from "@/lib/exportPdf";
 import { downloadTxt } from "@/lib/exportTxt";
+import { ExtractedEntity, extractEntitiesHeuristic, extractEntitiesWithLlm } from "@/lib/extractEntities";
 import { normalizeTranslationFootnotes, parseTranslationText } from "@/lib/footnotes";
 import { fileToDataUrl, hasSelectableTextInPdfPage, renderPdfPagesToJpegDataUrls } from "@/lib/imageOcr";
 import { extractSelectableTextFromPdf } from "@/lib/pdfExtract";
+import { TranslationDomain } from "@/lib/prompts";
+import { isReasonablyEnglish, withSmartRetry } from "@/lib/smartRetry";
 import { streamTranslation } from "@/lib/streamClient";
 import {
   createChunksFromPastedText,
@@ -39,6 +44,17 @@ const LEGACY_USER_API_KEY_STORAGE = "translator-user-openrouter-key";
 
 const SCANNED_MESSAGE =
   "This PDF appears to contain scanned images rather than selectable text. OCR support can be added in a future version.";
+
+/** Builds a rolling context summary from the end of the translated text. */
+const makeRollingSummary = (text: string, maxLen = 180): string => {
+  if (!text) return "";
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+  const slice = trimmed.slice(-maxLen);
+  // Try to start at a sentence boundary.
+  const sentenceBreak = slice.search(/[.!?。！？]\s+/);
+  return sentenceBreak > 10 ? slice.slice(sentenceBreak + 1).trim() : slice.trim();
+};
 
 export default function HomePage() {
   const [theme, setTheme] = useState<ThemePreference>("system");
@@ -73,6 +89,13 @@ export default function HomePage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [completedUnits, setCompletedUnits] = useState(0);
   const [totalUnits, setTotalUnits] = useState(0);
+
+  // Phase 1: Translation Quality state.
+  const [domain, setDomain] = useState<TranslationDomain>("general");
+  const [glossaryEntries, setGlossaryEntries] = useState<GlossaryEntry[]>([]);
+  const [extractedEntities, setExtractedEntities] = useState<ExtractedEntity[]>([]);
+  const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
+  const [previousSummary, setPreviousSummary] = useState("");
 
   const [toastMessage, setToastMessage] = useState("");
   const [toastVisible, setToastVisible] = useState(false);
@@ -137,6 +160,7 @@ export default function HomePage() {
     }
     return "Pasted Chinese text";
   }, [inputMode, pdfName, imageName]);
+
   const translateDisabled =
     processing ||
     (inputMode === "pdf" ? pdfTotalPages === 0 : inputMode === "image" ? !imageDataUrl : sourceChunks.length === 0);
@@ -146,6 +170,17 @@ export default function HomePage() {
   const showResultsPanel =
     translatedChunks.length > 0 || canShowPdfSideBySide || canShowImageSideBySide || processing;
   const showLivePreview = isStreaming && activeView === "english";
+
+  /** Locked glossary as a plain Record for API payload. */
+  const lockedGlossary = useMemo(() => {
+    const record: Record<string, string> = {};
+    for (const entry of glossaryEntries) {
+      if (entry.locked && entry.english.trim()) {
+        record[entry.chinese] = entry.english.trim();
+      }
+    }
+    return record;
+  }, [glossaryEntries]);
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -181,6 +216,7 @@ export default function HomePage() {
     setTranslatedChunks([]);
     setTranslationPages([]);
     setPdfScannedMessage("");
+    setExtractedEntities([]);
 
     if (!file) {
       resetPdfState();
@@ -223,12 +259,18 @@ export default function HomePage() {
       setPdfScannedMessage(SCANNED_MESSAGE);
       return;
     }
+
+    // Extract entities from the full text.
+    const fullText = result.pages.map((p) => p.text).join("\n\n");
+    const heuristics = extractEntitiesHeuristic(fullText);
+    setExtractedEntities(heuristics);
   };
 
   const handleImageSelect = async (file: File | null) => {
     setErrorMessage("");
     setTranslatedChunks([]);
     setTranslationPages([]);
+    setExtractedEntities([]);
 
     if (!file) {
       resetImageState();
@@ -326,16 +368,23 @@ export default function HomePage() {
           continue;
         }
 
-        const { text, model } = await streamTranslation(
-          {
-            imageTask: {
-              id: `pdf-ocr-p${page.pageNumber}`,
-              pageNumber: page.pageNumber,
-              imageDataUrl
-            },
-            userPpqApiKey: activeUserApiKey || undefined
-          },
-          { onDelta: (delta) => setLiveText((prev) => prev + delta) }
+        const { text, model } = await withSmartRetry(
+          async () =>
+            streamTranslation(
+              {
+                imageTask: {
+                  id: `pdf-ocr-p${page.pageNumber}`,
+                  pageNumber: page.pageNumber,
+                  imageDataUrl
+                },
+                userPpqApiKey: activeUserApiKey || undefined,
+                domain,
+                previousSummary: previousSummary || undefined,
+                glossary: lockedGlossary
+              },
+              { onDelta: (delta) => setLiveText((prev) => prev + delta) }
+            ),
+          { maxRetries: 2 }
         );
 
         if (!text.trim()) {
@@ -361,6 +410,7 @@ export default function HomePage() {
         setTranslatedChunks([...completedChunks]);
         if (model) setUsedModel(model);
         setCompletedUnits(index + 1);
+        setPreviousSummary(makeRollingSummary(text));
         continue;
       }
 
@@ -369,9 +419,19 @@ export default function HomePage() {
       let pageModel = "";
 
       for (const pageChunk of pageChunks) {
-        const { text, model } = await streamTranslation(
-          { chunk: pageChunk, userPpqApiKey: activeUserApiKey || undefined },
-          { onDelta: (delta) => setLiveText((prev) => prev + delta) }
+        const { text, model } = await withSmartRetry(
+          async () =>
+            streamTranslation(
+              {
+                chunk: pageChunk,
+                userPpqApiKey: activeUserApiKey || undefined,
+                domain,
+                previousSummary: previousSummary || undefined,
+                glossary: lockedGlossary
+              },
+              { onDelta: (delta) => setLiveText((prev) => prev + delta) }
+            ),
+          { maxRetries: 2 }
         );
 
         if (!text.trim()) {
@@ -380,6 +440,7 @@ export default function HomePage() {
 
         translatedPageChunks.push({ ...pageChunk, translatedEnglish: text });
         if (model) pageModel = model;
+        setPreviousSummary(makeRollingSummary(text));
       }
 
       const translatedText = normalizeTranslationFootnotes(joinEnglishTranslation(translatedPageChunks));
@@ -413,12 +474,19 @@ export default function HomePage() {
     setLiveText("");
     setIsStreaming(true);
 
-    const { text, model } = await streamTranslation(
-      {
-        imageTask: { id: "image-ocr-1", pageNumber: 1, imageDataUrl },
-        userPpqApiKey: activeUserApiKey || undefined
-      },
-      { onDelta: (delta) => setLiveText((prev) => prev + delta) }
+    const { text, model } = await withSmartRetry(
+      async () =>
+        streamTranslation(
+          {
+            imageTask: { id: "image-ocr-1", pageNumber: 1, imageDataUrl },
+            userPpqApiKey: activeUserApiKey || undefined,
+            domain,
+            previousSummary: previousSummary || undefined,
+            glossary: lockedGlossary
+          },
+          { onDelta: (delta) => setLiveText((prev) => prev + delta) }
+        ),
+      { maxRetries: 2 }
     );
 
     if (!text.trim()) {
@@ -444,6 +512,7 @@ export default function HomePage() {
     setCompletedUnits(1);
     setIsStreaming(false);
     setLiveText("");
+    setPreviousSummary(makeRollingSummary(text));
   };
 
   const handleTranslate = async () => {
@@ -471,9 +540,17 @@ export default function HomePage() {
     setTotalUnits(0);
     setActiveView("english");
     setProgressStep("preparing");
-    setStatusMessage("Preparing chunks...");
+    setStatusMessage("Preparing chunks & glossary...");
+    setPreviousSummary("");
 
     await new Promise((resolve) => setTimeout(resolve, 120));
+
+    // Extract entities for text mode (PDF already extracted on upload).
+    if (inputMode === "text" && sourceChunks.length > 0) {
+      const sampleText = sourceChunks.map((c) => c.originalChinese).join("\n\n");
+      const heuristics = extractEntitiesHeuristic(sampleText);
+      setExtractedEntities(heuristics);
+    }
 
     try {
       setProgressStep("translating");
@@ -493,9 +570,19 @@ export default function HomePage() {
           setLiveText("");
           setIsStreaming(true);
 
-          const { text, model } = await streamTranslation(
-            { chunk, userPpqApiKey: activeUserApiKey || undefined },
-            { onDelta: (delta) => setLiveText((prev) => prev + delta) }
+          const { text, model } = await withSmartRetry(
+            async () =>
+              streamTranslation(
+                {
+                  chunk,
+                  userPpqApiKey: activeUserApiKey || undefined,
+                  domain,
+                  previousSummary: previousSummary || undefined,
+                  glossary: lockedGlossary
+                },
+                { onDelta: (delta) => setLiveText((prev) => prev + delta) }
+              ),
+            { maxRetries: 2 }
           );
 
           if (!text.trim()) {
@@ -506,6 +593,7 @@ export default function HomePage() {
           setTranslatedChunks([...completedChunks]);
           if (model) setUsedModel(model);
           setCompletedUnits(index + 1);
+          setPreviousSummary(makeRollingSummary(text));
         }
 
         setIsStreaming(false);
@@ -550,6 +638,10 @@ export default function HomePage() {
     setIsStreaming(false);
     setCompletedUnits(0);
     setTotalUnits(0);
+    setDomain("general");
+    setGlossaryEntries([]);
+    setExtractedEntities([]);
+    setPreviousSummary("");
   };
 
   const handleCopyEnglish = async () => {
@@ -653,6 +745,20 @@ export default function HomePage() {
               Reset
             </button>
 
+            <button
+              type="button"
+              onClick={() => setIsGlossaryOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white/90 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-900"
+            >
+              <span>📖</span>
+              Glossary
+              {glossaryEntries.filter((e) => e.locked).length > 0 ? (
+                <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
+                  {glossaryEntries.filter((e) => e.locked).length}
+                </span>
+              ) : null}
+            </button>
+
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <span
                 className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
@@ -670,6 +776,11 @@ export default function HomePage() {
                 </span>
               ) : null}
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Domain:</span>
+            <DomainSelector value={domain} onChange={setDomain} disabled={processing} />
           </div>
         </section>
 
@@ -872,6 +983,14 @@ export default function HomePage() {
         onRememberKeyChange={setRememberKey}
         onSave={handleSaveApiKey}
         onClearSaved={handleClearSavedKey}
+      />
+
+      <EntityGlossary
+        extracted={extractedEntities}
+        entries={glossaryEntries}
+        onEntriesChange={setGlossaryEntries}
+        open={isGlossaryOpen}
+        onClose={() => setIsGlossaryOpen(false)}
       />
 
       <Toast message={toastMessage} visible={toastVisible} />

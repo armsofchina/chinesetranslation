@@ -1,3 +1,4 @@
+import { TranslationDomain } from "@/lib/prompts";
 import { TranslateImageTask, TranslationChunk } from "@/lib/types";
 
 type StreamHandlers = {
@@ -11,9 +12,16 @@ type StreamResult = {
   model: string;
 };
 
+type StreamPayloadBase = {
+  userPpqApiKey?: string;
+  domain?: TranslationDomain;
+  previousSummary?: string;
+  glossary?: Record<string, string>;
+};
+
 type StreamPayload =
-  | { chunk: TranslationChunk; userPpqApiKey?: string }
-  | { imageTask: TranslateImageTask; userPpqApiKey?: string };
+  | ({ chunk: TranslationChunk } & StreamPayloadBase)
+  | ({ imageTask: TranslateImageTask } & StreamPayloadBase);
 
 /**
  * Calls the streaming translation endpoint and invokes `onDelta` for every

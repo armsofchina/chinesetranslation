@@ -6,6 +6,7 @@ import {
   streamTranslateWithPpq
 } from "@/lib/ppq";
 import { normalizeTranslationFootnotes } from "@/lib/footnotes";
+import { TranslationDomain } from "@/lib/prompts";
 import { TranslateImageTask, TranslationChunk } from "@/lib/types";
 
 type StreamRequestBody = {
@@ -15,6 +16,9 @@ type StreamRequestBody = {
   userPpqApiKey?: string;
   userOpenRouterApiKey?: string;
   model?: string;
+  domain?: TranslationDomain;
+  previousSummary?: string;
+  glossary?: Record<string, string>;
 };
 
 export const runtime = "nodejs";
@@ -73,6 +77,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const domain = body?.domain || "general";
+  const previousSummary = body?.previousSummary;
+  const glossary = body?.glossary;
+
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -87,12 +95,18 @@ export async function POST(request: NextRequest) {
           ? await streamTranslateImageWithPpq({
               apiKey: selectedApiKey,
               model: imageModel,
-              imageDataUrl: imageTask.imageDataUrl
+              imageDataUrl: imageTask.imageDataUrl,
+              domain,
+              previousSummary,
+              glossary
             })
           : await streamTranslateWithPpq({
               apiKey: selectedApiKey,
               model,
-              text: chunk!.originalChinese
+              text: chunk!.originalChinese,
+              domain,
+              previousSummary,
+              glossary
             });
 
         let full = "";
