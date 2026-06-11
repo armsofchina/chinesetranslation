@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ChineseSourceBody from "@/components/ChineseSourceBody";
 import StructuredTranslationBody from "@/components/StructuredTranslationBody";
 import { parseTranslationText } from "@/lib/footnotes";
@@ -34,6 +34,8 @@ export default function PdfSideBySideView({
   const [zoom, setZoom] = useState<ZoomValue>("fit-width");
   const [pdfViewerFailed, setPdfViewerFailed] = useState(false);
   const [sourceDisplay, setSourceDisplay] = useState<SourceDisplay>("pdf");
+  const sourcePaneRef = useRef<HTMLDivElement | null>(null);
+  const translationPaneRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -81,6 +83,11 @@ export default function PdfSideBySideView({
       setSourceDisplay("pdf");
     }
   }, [canShowTextSource, sourceDisplay]);
+
+  useEffect(() => {
+    sourcePaneRef.current?.scrollTo({ top: 0 });
+    translationPaneRef.current?.scrollTo({ top: 0 });
+  }, [currentPage, sourceDisplay]);
 
   const handlePrev = () => setCurrentPage((prev) => Math.max(1, prev - 1));
   const handleNext = () => setCurrentPage((prev) => Math.min(effectivePageCount, prev + 1));
@@ -234,13 +241,19 @@ export default function PdfSideBySideView({
           </div>
 
           {showTextSource ? (
-            <div className="h-[72vh] min-h-[560px] overflow-y-auto rounded-2xl border border-amber-100 bg-amber-50/60 p-4 dark:border-slate-700 dark:bg-slate-950/60 lg:h-[calc(100vh-15rem)] lg:max-h-[860px]">
+            <div
+              ref={sourcePaneRef}
+              className="h-[72vh] min-h-[560px] overflow-y-auto rounded-2xl border border-amber-100 bg-amber-50/60 p-4 dark:border-slate-700 dark:bg-slate-950/60 lg:h-[calc(100vh-15rem)] lg:max-h-[860px]"
+            >
               <div className="text-sm text-slate-800 dark:text-slate-100">
                 <ChineseSourceBody text={fallbackChineseText} compact />
               </div>
             </div>
           ) : pdfViewerFailed ? (
-            <div className="h-[72vh] min-h-[560px] overflow-y-auto rounded-2xl border border-amber-100 bg-amber-50/60 p-4 dark:border-slate-700 dark:bg-slate-950/60 lg:h-[calc(100vh-15rem)] lg:max-h-[860px]">
+            <div
+              ref={sourcePaneRef}
+              className="h-[72vh] min-h-[560px] overflow-y-auto rounded-2xl border border-amber-100 bg-amber-50/60 p-4 dark:border-slate-700 dark:bg-slate-950/60 lg:h-[calc(100vh-15rem)] lg:max-h-[860px]"
+            >
               <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
                 Inline PDF viewing is unavailable in this browser. Showing extracted text fallback for this page.
               </p>
@@ -278,39 +291,66 @@ export default function PdfSideBySideView({
             )}
           </div>
 
-          <div className="h-[72vh] min-h-[560px] overflow-y-auto rounded-2xl border border-amber-100 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-950/40 lg:h-[calc(100vh-15rem)] lg:max-h-[860px]">
+          <div
+            ref={translationPaneRef}
+            className="h-[72vh] min-h-[560px] overflow-y-auto rounded-2xl border border-amber-100 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-950/40 lg:h-[calc(100vh-15rem)] lg:max-h-[860px]"
+          >
             {currentTranslation?.translatedText?.trim() ? (
-            <div
-              className="document-text text-sm leading-8 text-slate-800 dark:text-slate-100"
-              style={{ fontFamily: "var(--font-doc), Georgia, serif" }}
-            >
-              <StructuredTranslationBody paragraphs={parsedTranslation.bodyParagraphs} compact />
+              <div
+                className="document-text text-sm leading-8 text-slate-800 dark:text-slate-100"
+                style={{ fontFamily: "var(--font-doc), Georgia, serif" }}
+              >
+                <StructuredTranslationBody paragraphs={parsedTranslation.bodyParagraphs} compact />
 
-              {parsedTranslation.footnotes.length > 0 ? (
-                <section className="mt-6 rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4 dark:border-amber-900/80 dark:bg-amber-950/30">
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
-                    Footnotes
-                  </p>
-                  <ol className="space-y-2">
-                    {parsedTranslation.footnotes.map((note) => (
-                      <li key={`${note.marker}-${note.content.slice(0, 24)}`} className="text-sm leading-7 text-slate-700 dark:text-slate-200">
-                        <span className="mr-2 font-semibold text-amber-800 dark:text-amber-200">{note.marker}</span>
-                        <span>{note.content}</span>
-                      </li>
-                    ))}
-                  </ol>
-                </section>
-              ) : null}
-            </div>
+                {parsedTranslation.footnotes.length > 0 ? (
+                  <section className="mt-6 rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4 dark:border-amber-900/80 dark:bg-amber-950/30">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                      Footnotes
+                    </p>
+                    <ol className="space-y-2">
+                      {parsedTranslation.footnotes.map((note) => (
+                        <li key={`${note.marker}-${note.content.slice(0, 24)}`} className="text-sm leading-7 text-slate-700 dark:text-slate-200">
+                          <span className="mr-2 font-semibold text-amber-800 dark:text-amber-200">{note.marker}</span>
+                          <span>{note.content}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
+                ) : null}
+              </div>
             ) : scannedMessage ? (
-            <p className="document-text rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
-              {scannedMessage}
-            </p>
+              <p className="document-text rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                {scannedMessage}
+              </p>
             ) : (
-            <p className="document-text rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
-              No translated text is available for this page yet.
-            </p>
+              <p className="document-text rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+                No translated text is available for this page yet.
+              </p>
             )}
+
+            <div className="mt-6 border-t border-amber-100 pt-4 dark:border-slate-800">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={handlePrev}
+                  disabled={currentPage <= 1}
+                  className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  Previous page
+                </button>
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Page {currentPage} of {effectivePageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  disabled={currentPage >= effectivePageCount}
+                  className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  Next page
+                </button>
+              </div>
+            </div>
           </div>
         </article>
       </div>
