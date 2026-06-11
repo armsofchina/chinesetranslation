@@ -15,6 +15,7 @@ type PdfSideBySideViewProps = {
 };
 
 type ZoomValue = number | "fit-width";
+type SourceDisplay = "pdf" | "text";
 
 const MIN_ZOOM = 60;
 const MAX_ZOOM = 240;
@@ -32,10 +33,12 @@ export default function PdfSideBySideView({
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState<ZoomValue>("fit-width");
   const [pdfViewerFailed, setPdfViewerFailed] = useState(false);
+  const [sourceDisplay, setSourceDisplay] = useState<SourceDisplay>("pdf");
 
   useEffect(() => {
     setCurrentPage(1);
     setZoom("fit-width");
+    setSourceDisplay("pdf");
     setPdfViewerFailed(typeof navigator !== "undefined" && navigator.pdfViewerEnabled === false);
   }, [pdfUrl]);
 
@@ -70,6 +73,14 @@ export default function PdfSideBySideView({
   const ocrReadyCount = extractedPages.filter((page) => !page.text.trim()).length;
   const currentPageNeedsOcr = !fallbackChineseText.trim();
   const nextUntranslatedPage = pageOptions.find((option) => !pageTranslationMap.get(option.value)?.translatedText?.trim());
+  const canShowTextSource = Boolean(fallbackChineseText.trim());
+  const showTextSource = sourceDisplay === "text" && canShowTextSource;
+
+  useEffect(() => {
+    if (!canShowTextSource && sourceDisplay === "text") {
+      setSourceDisplay("pdf");
+    }
+  }, [canShowTextSource, sourceDisplay]);
 
   const handlePrev = () => setCurrentPage((prev) => Math.max(1, prev - 1));
   const handleNext = () => setCurrentPage((prev) => Math.min(effectivePageCount, prev + 1));
@@ -150,24 +161,52 @@ export default function PdfSideBySideView({
               Next untranslated
             </button>
           ) : null}
+          <div className="inline-flex rounded-full border border-slate-300 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-900">
+            <button
+              type="button"
+              onClick={() => setSourceDisplay("pdf")}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                sourceDisplay === "pdf"
+                  ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950"
+                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              }`}
+            >
+              PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => setSourceDisplay("text")}
+              disabled={!canShowTextSource}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                sourceDisplay === "text"
+                  ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950"
+                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              }`}
+            >
+              Text
+            </button>
+          </div>
           <button
             type="button"
             onClick={zoomOut}
-            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            disabled={showTextSource}
+            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             Zoom out
           </button>
           <button
             type="button"
             onClick={zoomIn}
-            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            disabled={showTextSource}
+            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             Zoom in
           </button>
           <button
             type="button"
             onClick={() => setZoom("fit-width")}
-            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            disabled={showTextSource}
+            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             Fit width
           </button>
@@ -177,11 +216,11 @@ export default function PdfSideBySideView({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(420px,_0.95fr)_minmax(0,_1.05fr)] lg:items-start">
         <article className="rounded-3xl border border-amber-200/70 bg-white/90 p-4 shadow-soft dark:border-slate-700 dark:bg-slate-900/75">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Original PDF • Page {currentPage}
+              {showTextSource ? "Original Chinese Text" : "Original PDF"} • Page {currentPage}
             </p>
             {currentPageNeedsOcr ? (
               <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
@@ -194,8 +233,14 @@ export default function PdfSideBySideView({
             )}
           </div>
 
-          {pdfViewerFailed ? (
-            <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4 dark:border-slate-700 dark:bg-slate-950/60">
+          {showTextSource ? (
+            <div className="h-[72vh] min-h-[560px] overflow-y-auto rounded-2xl border border-amber-100 bg-amber-50/60 p-4 dark:border-slate-700 dark:bg-slate-950/60 lg:h-[calc(100vh-15rem)] lg:max-h-[860px]">
+              <div className="text-sm text-slate-800 dark:text-slate-100">
+                <ChineseSourceBody text={fallbackChineseText} compact />
+              </div>
+            </div>
+          ) : pdfViewerFailed ? (
+            <div className="h-[72vh] min-h-[560px] overflow-y-auto rounded-2xl border border-amber-100 bg-amber-50/60 p-4 dark:border-slate-700 dark:bg-slate-950/60 lg:h-[calc(100vh-15rem)] lg:max-h-[860px]">
               <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
                 Inline PDF viewing is unavailable in this browser. Showing extracted text fallback for this page.
               </p>
@@ -211,7 +256,7 @@ export default function PdfSideBySideView({
             <iframe
               src={viewerSrc}
               title={`PDF page ${currentPage}`}
-              className="h-[72vh] min-h-[560px] w-full rounded-2xl border border-amber-100 bg-white dark:border-slate-700"
+              className="h-[72vh] min-h-[560px] w-full rounded-2xl border border-amber-100 bg-white dark:border-slate-700 lg:h-[calc(100vh-15rem)] lg:max-h-[860px]"
               onError={() => setPdfViewerFailed(true)}
             />
           )}
@@ -233,7 +278,8 @@ export default function PdfSideBySideView({
             )}
           </div>
 
-          {currentTranslation?.translatedText?.trim() ? (
+          <div className="h-[72vh] min-h-[560px] overflow-y-auto rounded-2xl border border-amber-100 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-950/40 lg:h-[calc(100vh-15rem)] lg:max-h-[860px]">
+            {currentTranslation?.translatedText?.trim() ? (
             <div
               className="document-text text-sm leading-8 text-slate-800 dark:text-slate-100"
               style={{ fontFamily: "var(--font-doc), Georgia, serif" }}
@@ -256,15 +302,16 @@ export default function PdfSideBySideView({
                 </section>
               ) : null}
             </div>
-          ) : scannedMessage ? (
+            ) : scannedMessage ? (
             <p className="document-text rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
               {scannedMessage}
             </p>
-          ) : (
+            ) : (
             <p className="document-text rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
               No translated text is available for this page yet.
             </p>
-          )}
+            )}
+          </div>
         </article>
       </div>
     </section>
