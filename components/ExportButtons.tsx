@@ -9,47 +9,40 @@ type ExportButtonsProps = {
   disabled?: boolean;
 };
 
-export default function ExportButtons({
-  onCopy,
-  onDownloadTxt,
-  onDownloadPdf,
-  onDownloadHtml,
-  copied,
-  disabled
-}: ExportButtonsProps) {
+export default function ExportButtons({ onCopy, onDownloadTxt, onDownloadPdf, onDownloadHtml, copied, disabled }: ExportButtonsProps) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-1">
       <button
         type="button"
         onClick={onCopy}
         disabled={disabled}
-        className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+        className="primary-button px-3 py-2 text-xs"
       >
-        {copied ? "Copied." : "Copy English"}
+        {copied ? "Copied" : "Copy"}
       </button>
       <button
         type="button"
         onClick={onDownloadHtml}
         disabled={disabled}
-        className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        className="secondary-button px-2.5 py-2 text-xs"
       >
-        Download HTML
+        HTML
       </button>
       <button
         type="button"
         onClick={onDownloadTxt}
         disabled={disabled}
-        className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        className="secondary-button px-2.5 py-2 text-xs"
       >
-        Download TXT
+        TXT
       </button>
       <button
         type="button"
         onClick={onDownloadPdf}
         disabled={disabled}
-        className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        className="secondary-button px-2.5 py-2 text-xs"
       >
-        Download PDF
+        PDF
       </button>
     </div>
   );

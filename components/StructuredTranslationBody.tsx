@@ -20,7 +20,7 @@ export default function StructuredTranslationBody({ paragraphs, compact = false 
           return (
             <div
               key={`table-${index + 1}`}
-              className={`${sectionSpacing} overflow-x-auto rounded-2xl border border-amber-200/80 bg-white/70 p-3 shadow-sm dark:border-slate-700 dark:bg-slate-950/40`}
+              className={`${sectionSpacing} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/40`}
             >
               <table className="min-w-full table-auto border-collapse text-left text-sm">
                 <thead>
@@ -28,7 +28,7 @@ export default function StructuredTranslationBody({ paragraphs, compact = false 
                     {block.headers.map((header, headerIndex) => (
                       <th
                         key={`header-${headerIndex + 1}`}
-                        className="border-b border-amber-200 px-3 py-2 font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100"
+                        className="border-b border-slate-200 px-3 py-2 font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100"
                       >
                         {header || `Column ${headerIndex + 1}`}
                       </th>
@@ -42,7 +42,7 @@ export default function StructuredTranslationBody({ paragraphs, compact = false 
                         {row.map((cell, cellIndex) => (
                           <td
                             key={`cell-${rowIndex + 1}-${cellIndex + 1}`}
-                            className="border-b border-amber-100 px-3 py-2 align-top text-slate-700 dark:border-slate-800 dark:text-slate-200"
+                            className="border-b border-slate-200 px-3 py-2 align-top text-slate-700 dark:border-slate-800 dark:text-slate-200"
                           >
                             <span className="whitespace-pre-wrap break-words">{cell}</span>
                           </td>
@@ -71,7 +71,7 @@ export default function StructuredTranslationBody({ paragraphs, compact = false 
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 {block.kind === "chart" ? "Chart Data" : "Structured Table Data"}
               </p>
-              <pre className="overflow-x-auto rounded-2xl border border-amber-200/80 bg-white/70 p-3 font-mono text-xs leading-6 text-slate-700 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-200">
+              <pre className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 p-3 font-mono text-xs leading-6 text-slate-700 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-200">
                 {block.text}
               </pre>
             </div>

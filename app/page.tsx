@@ -809,8 +809,8 @@ export default function HomePage() {
   };
 
   return (
-    <main className="min-h-screen px-4 py-5 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-5">
+    <main className="min-h-screen px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
         <AppHeader
           theme={theme}
           usingCustomKey={usingCustomKey}
@@ -818,30 +818,25 @@ export default function HomePage() {
           onOpenApiSettings={() => setIsSettingsOpen(true)}
         />
 
-        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.7fr)_minmax(390px,0.8fr)] 2xl:items-start">
-          <section className="rounded-[22px] border border-amber-200/70 bg-white/85 p-5 shadow-soft backdrop-blur dark:border-slate-700 dark:bg-slate-900/75 lg:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">
-                  Source
-                </p>
-                <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">Add source content</h2>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                  Choose an input, load the source, and check readiness before translating.
-                </p>
+        <div className="grid gap-4 xl:grid-cols-[370px_minmax(0,1fr)] xl:items-start">
+          <aside className="space-y-4 xl:sticky xl:top-4">
+            <section className="workspace-panel p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="eyebrow">Source</p>
+                  <h2 className="mt-1 text-lg font-semibold text-slate-950 dark:text-slate-50">Add content</h2>
+                </div>
+                <span className={hasSourceLoaded ? "status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200" : "status-pill"}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${hasSourceLoaded ? "bg-emerald-500" : "bg-slate-400"}`} />
+                  {hasSourceLoaded ? "Ready" : "Waiting"}
+                </span>
               </div>
-              <div className="min-w-[220px] rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-950/70">
-                <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">{sourceSummary.title}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{sourceSummary.detail}</p>
+
+              <div className="mt-4">
+                <InputModeTabs value={inputMode} onChange={setInputMode} />
               </div>
-            </div>
 
-            <div className="mt-5">
-              <InputModeTabs value={inputMode} onChange={setInputMode} />
-            </div>
-
-            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-              <div className="rounded-2xl border border-amber-200/60 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-950/60">
+              <div className="mt-4">
                 {inputMode === "pdf" ? (
                   <FileUpload fileName={pdfName} onFileSelect={handleFileSelect} />
                 ) : inputMode === "image" ? (
@@ -851,21 +846,13 @@ export default function HomePage() {
                 )}
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/70">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  Readiness
-                </p>
-                <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{sourceSummary.helper}</p>
-                <div className="mt-4 grid gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <div className="workspace-panel-quiet mt-4 p-3">
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{sourceSummary.title}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{sourceSummary.detail}</p>
+                <div className="mt-3 grid gap-2 border-t border-slate-200 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
                   <div className="flex items-center justify-between gap-3">
                     <span>Input</span>
                     <span className="font-medium capitalize text-slate-700 dark:text-slate-200">{inputMode}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span>Status</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-200">
-                      {hasSourceLoaded ? "Ready" : "Waiting"}
-                    </span>
                   </div>
                   {inputMode === "pdf" && pdfTotalPages > 0 ? (
                     <div className="flex items-center justify-between gap-3">
@@ -874,130 +861,99 @@ export default function HomePage() {
                     </div>
                   ) : null}
                 </div>
+                <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">{sourceSummary.helper}</p>
               </div>
-            </div>
-          </section>
+            </section>
 
-          <section className="rounded-[22px] border border-amber-200/70 bg-white/85 p-5 shadow-soft backdrop-blur dark:border-slate-700 dark:bg-slate-900/75 lg:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  Translation
-                </p>
-                <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">Tune and run</h2>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                  Set domain, terminology, and connection details.
-                </p>
+            <section className="workspace-panel p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="eyebrow">Translation</p>
+                  <h2 className="mt-1 text-lg font-semibold text-slate-950 dark:text-slate-50">Tune and run</h2>
+                </div>
+                <span className="status-pill">{selectedDomain.label}</span>
               </div>
-              <span className="rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
-                {selectedDomain.label}
-              </span>
-            </div>
 
-            <div className="mt-4">
-              <DomainSelector value={domain} onChange={setDomain} disabled={processing} />
-              <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">{selectedDomain.description}</p>
-            </div>
+              <div className="mt-4">
+                <DomainSelector value={domain} onChange={setDomain} disabled={processing} />
+                <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{selectedDomain.description}</p>
+              </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-1">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/70">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Glossary</p>
-                  <button
-                    type="button"
-                    onClick={() => setIsGlossaryOpen(true)}
-                    className="rounded-full border border-slate-300 bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-900"
-                  >
-                    Open
-                  </button>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                    {extractedEntities.length} detected
-                  </span>
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-                    {lockedGlossaryCount} locked
-                  </span>
-                </div>
-                {lockedGlossaryCount > 0 ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {glossaryEntries
-                      .filter((entry) => entry.locked && entry.english.trim())
-                      .slice(0, 3)
-                      .map((entry) => (
-                        <span
-                          key={`${entry.chinese}-${entry.english}`}
-                          className="rounded-full border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
-                        >
-                          {entry.chinese}
-                          {" -> "}
-                          {entry.english}
-                        </span>
-                      ))}
+              <div className="mt-4 grid gap-3">
+                <div className="workspace-panel-quiet p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Glossary</p>
+                    <button type="button" onClick={() => setIsGlossaryOpen(true)} className="secondary-button px-2.5 py-1.5 text-xs">
+                      Open
+                    </button>
                   </div>
-                ) : null}
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/70">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Connection</p>
-                  <button
-                    type="button"
-                    onClick={() => setIsSettingsOpen(true)}
-                    className="rounded-full border border-slate-300 bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-900"
-                  >
-                    Manage
-                  </button>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-                      usingCustomKey
-                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
-                        : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                    }`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${usingCustomKey ? "bg-emerald-500" : "bg-slate-400"}`} />
-                    {usingCustomKey ? "Personal PPQ key" : "Shared app key"}
-                  </span>
-                  {usedModel ? (
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                      {usedModel}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="status-pill">{extractedEntities.length} detected</span>
+                    <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                      {lockedGlossaryCount} locked
                     </span>
+                  </div>
+                  {lockedGlossaryCount > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {glossaryEntries
+                        .filter((entry) => entry.locked && entry.english.trim())
+                        .slice(0, 3)
+                        .map((entry) => (
+                          <span
+                            key={`${entry.chinese}-${entry.english}`}
+                            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                          >
+                            {entry.chinese}
+                            {" -> "}
+                            {entry.english}
+                          </span>
+                        ))}
+                    </div>
                   ) : null}
                 </div>
+
+                <div className="workspace-panel-quiet p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Connection</p>
+                    <button type="button" onClick={() => setIsSettingsOpen(true)} className="secondary-button px-2.5 py-1.5 text-xs">
+                      Manage
+                    </button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span
+                      className={`status-pill ${
+                        usingCustomKey
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
+                          : ""
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${usingCustomKey ? "bg-emerald-500" : "bg-slate-400"}`} />
+                      {usingCustomKey ? "Personal key" : "Shared key"}
+                    </span>
+                    {usedModel ? <span className="status-pill">{usedModel}</span> : null}
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <button
-                type="button"
-                onClick={handleTranslate}
-                disabled={translateDisabled}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-br from-amber-700 to-amber-600 px-5 py-3 text-sm font-semibold text-amber-50 shadow-sm transition hover:from-amber-600 hover:to-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-slate-900"
-              >
-                {processing ? (
-                  <>
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-200 border-t-transparent" />
-                    Translating...
-                  </>
-                ) : (
-                  "Translate to English"
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={handleReset}
-                disabled={processing}
-                className="rounded-full border border-slate-300 bg-white/90 px-5 py-3 text-sm font-medium text-slate-700 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-900"
-              >
-                New document
-              </button>
-            </div>
-          </section>
-        </div>
+              <div className="mt-4 grid gap-2">
+                <button type="button" onClick={handleTranslate} disabled={translateDisabled} className="primary-button w-full gap-2">
+                  {processing ? (
+                    <>
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/70 border-t-transparent dark:border-slate-950/50 dark:border-t-transparent" />
+                      Translating...
+                    </>
+                  ) : (
+                    "Translate to English"
+                  )}
+                </button>
+                <button type="button" onClick={handleReset} disabled={processing} className="secondary-button w-full">
+                  New document
+                </button>
+              </div>
+            </section>
+          </aside>
 
-        <section className="space-y-5">
+          <section className="min-w-0 space-y-4">
             <ProgressIndicator
               step={progressStep}
               processing={processing}
@@ -1010,18 +966,18 @@ export default function HomePage() {
             <ErrorState message={errorMessage} />
 
             {showResultsPanel ? (
-              <section className="space-y-4 rounded-[30px] border border-amber-200/70 bg-white/85 p-6 shadow-soft backdrop-blur dark:border-slate-700 dark:bg-slate-900/75">
+              <section className="workspace-panel min-h-[520px] space-y-4 p-3 sm:p-4 lg:p-5">
                 {hasTranslation || processing ? (
-                  <div className="sticky top-4 z-10 space-y-4 rounded-[26px] border border-amber-200/60 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+                  <div className="sticky top-4 z-10 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                        <h3 className="text-base font-semibold text-slate-950 dark:text-slate-50">
                           {processing ? "Translation in progress" : "Translation results"}
                         </h3>
                         <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
                           {processing && totalUnits > 0
                             ? `Working through ${Math.min(completedUnits, totalUnits)} of ${totalUnits} ${inputMode === "pdf" ? "pages" : inputMode === "image" ? "image steps" : "sections"}`
-                            : `Review ${sourceLabel}, compare layouts, then export the final English output.`}
+                            : `${sourceLabel}${usedModel ? ` · ${usedModel}` : ""}`}
                         </p>
                       </div>
                       <ExportButtons
@@ -1034,81 +990,81 @@ export default function HomePage() {
                       />
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                       <TranslationTabs active={activeView} onChange={setActiveView} />
-                      <div className="flex flex-wrap items-center gap-2">
-                        {(activeView === "english" || (activeView === "original" && inputMode !== "image")) ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => setDocumentFontSize((prev) => Math.max(14, prev - 1))}
-                              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                            >
-                              A-
-                            </button>
-                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                              {documentFontSize}px
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setDocumentFontSize((prev) => Math.min(22, prev + 1))}
-                              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                            >
-                              A+
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDocumentFontSize(16)}
-                              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                            >
-                              Reset size
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setReadingWidth((prev) => (prev === "focused" ? "wide" : "focused"))}
-                              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                            >
-                              {readingWidth === "focused" ? "Wider page" : "Focused width"}
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
+                      {(activeView === "english" || (activeView === "original" && inputMode !== "image")) ? (
+                        <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950/60">
+                          <button
+                            type="button"
+                            onClick={() => setDocumentFontSize((prev) => Math.max(14, prev - 1))}
+                            className="icon-button h-8 w-8 border-0 bg-transparent"
+                            title="Decrease text size"
+                          >
+                            A-
+                          </button>
+                          <span className="min-w-12 px-1 text-center text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">
+                            {documentFontSize}px
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setDocumentFontSize((prev) => Math.min(22, prev + 1))}
+                            className="icon-button h-8 w-8 border-0 bg-transparent"
+                            title="Increase text size"
+                          >
+                            A+
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDocumentFontSize(16)}
+                            className="secondary-button h-8 border-0 bg-transparent px-2 text-xs"
+                            title="Reset text size"
+                          >
+                            100%
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReadingWidth((prev) => (prev === "focused" ? "wide" : "focused"))}
+                            className="secondary-button h-8 border-0 bg-transparent px-2 text-xs"
+                            title="Toggle reading width"
+                          >
+                            {readingWidth === "focused" ? "Wide" : "Focus"}
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-[26px] border border-amber-200/60 bg-white/95 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/90">
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Source preview</h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                      Review the source, adjust your glossary or domain if needed, then run translation when you are ready.
-                    </p>
+                  <div className="rounded-xl border border-slate-200 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-900/70">
+                    <p className="eyebrow">Preview</p>
+                    <h3 className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">Source preview</h3>
                   </div>
                 )}
 
                 {!hasTranslation && !processing ? (
                   inputMode === "image" ? (
-                    <article className="rounded-3xl border border-amber-200/70 bg-white/90 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Source Image</p>
+                    <article className="reader-card p-4">
+                      <p className="eyebrow mb-3">Source image</p>
                       {imageDataUrl ? (
                         <img
                           src={imageDataUrl}
                           alt="Uploaded source"
-                          className="max-h-[72vh] w-full rounded-2xl border border-amber-100 object-contain dark:border-slate-700"
+                          className="max-h-[72vh] w-full rounded-xl border border-slate-200 object-contain dark:border-slate-800"
                         />
                       ) : (
                         <p className="text-sm text-slate-600 dark:text-slate-300">No image loaded.</p>
                       )}
                     </article>
                   ) : inputMode === "pdf" ? (
-                    <article className="rounded-3xl border border-amber-200/70 bg-white/90 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+                    <article className="reader-card p-4">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Source PDF</p>
+                          <p className="eyebrow">Source PDF</p>
                           <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                             {pdfName ? `${pdfName} · ${pdfTotalPages} pages` : "Upload a PDF to preview it here."}
                           </p>
                         </div>
                         {ocrPageCount > 0 ? (
-                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                          <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
                             {ocrPageCount} OCR page{ocrPageCount === 1 ? "" : "s"} detected
                           </span>
                         ) : null}
@@ -1117,17 +1073,15 @@ export default function HomePage() {
                         <iframe
                           src={`${pdfObjectUrl}#page=1&zoom=page-width`}
                           title="Source PDF preview"
-                          className="mt-4 h-[72vh] min-h-[560px] w-full rounded-2xl border border-amber-100 bg-white dark:border-slate-700"
+                          className="mt-4 h-[72vh] min-h-[560px] w-full rounded-xl border border-slate-200 bg-white dark:border-slate-800"
                         />
                       ) : (
                         <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">No PDF loaded.</p>
                       )}
                     </article>
                   ) : (
-                    <article className={`mx-auto w-full ${readingWidthClass} rounded-3xl border border-amber-200/70 bg-white/90 p-7 shadow-sm dark:border-slate-700 dark:bg-slate-900/70`}>
-                      <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Original Chinese
-                      </p>
+                    <article className={`reader-card mx-auto w-full ${readingWidthClass} p-6 sm:p-7`}>
+                      <p className="eyebrow mb-4">Original Chinese</p>
                       <div className="text-slate-800 dark:text-slate-100" style={{ fontSize: `${documentFontSize}px` }}>
                         <ChineseSourceBody text={pastedText} />
                       </div>
@@ -1139,13 +1093,13 @@ export default function HomePage() {
                   <>
                     {activeView === "original" ? (
                       inputMode === "image" ? (
-                        <article className="rounded-3xl border border-amber-200/70 bg-white/90 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
-                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Original Image</p>
+                        <article className="reader-card p-4">
+                          <p className="eyebrow mb-3">Original image</p>
                           {imageDataUrl ? (
                             <img
                               src={imageDataUrl}
                               alt="Uploaded source"
-                              className="max-h-[72vh] w-full rounded-2xl border border-amber-100 object-contain dark:border-slate-700"
+                              className="max-h-[72vh] w-full rounded-xl border border-slate-200 object-contain dark:border-slate-800"
                             />
                           ) : (
                             <p className="text-sm text-slate-600 dark:text-slate-300">No image loaded.</p>
@@ -1156,14 +1110,14 @@ export default function HomePage() {
                           {pdfPages.map((page) => (
                             <article
                               key={`orig-page-${page.pageNumber}`}
-                              className={`mx-auto w-full ${readingWidthClass} rounded-3xl border border-amber-200/70 bg-white/90 p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900/70`}
+                              className={`reader-card mx-auto w-full ${readingWidthClass} p-5 sm:p-6`}
                             >
                               <div className="mb-3 flex flex-wrap items-center gap-2">
-                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                <p className="eyebrow">
                                   第 {page.pageNumber} 頁 · Page {page.pageNumber}
                                 </p>
                                 {!page.text.trim() ? (
-                                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                                  <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
                                     OCR page
                                   </span>
                                 ) : null}
@@ -1184,10 +1138,8 @@ export default function HomePage() {
                           ))}
                         </div>
                       ) : (
-                        <article className={`mx-auto w-full ${readingWidthClass} rounded-3xl border border-amber-200/70 bg-white/90 p-7 shadow-sm dark:border-slate-700 dark:bg-slate-900/70`}>
-                          <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                            Original Chinese
-                          </p>
+                        <article className={`reader-card mx-auto w-full ${readingWidthClass} p-6 sm:p-7`}>
+                          <p className="eyebrow mb-4">Original Chinese</p>
                           <div className="text-slate-800 dark:text-slate-100" style={{ fontSize: `${documentFontSize}px` }}>
                             <ChineseSourceBody text={pastedText} />
                           </div>
@@ -1196,13 +1148,11 @@ export default function HomePage() {
                     ) : null}
 
                     {activeView === "english" ? (
-                      <article className={`mx-auto w-full ${readingWidthClass} rounded-3xl border border-amber-200/70 bg-white/90 p-7 shadow-sm dark:border-slate-700 dark:bg-slate-900/70`}>
+                      <article className={`reader-card mx-auto w-full ${readingWidthClass} p-6 sm:p-8`}>
                         <div className="mb-5 flex items-center justify-between gap-3">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                            English Translation
-                          </p>
+                          <p className="eyebrow">English Translation</p>
                           {isStreaming ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+                            <span className="status-pill bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
                               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
                               Streaming
                             </span>
@@ -1233,17 +1183,15 @@ export default function HomePage() {
                           ) : null}
 
                           {parsedEnglishText.footnotes.length > 0 ? (
-                            <section className="mt-8 rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4 dark:border-amber-900/80 dark:bg-amber-950/30">
-                              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
-                                Footnotes
-                              </p>
+                            <section className="mt-8 rounded-xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                              <p className="eyebrow mb-3">Footnotes</p>
                               <ol className="space-y-2">
                                 {parsedEnglishText.footnotes.map((note) => (
                                   <li
                                     key={`${note.marker}-${note.content.slice(0, 24)}`}
                                     className="text-sm leading-8 text-slate-700 dark:text-slate-200"
                                   >
-                                    <span className="mr-2 font-semibold text-amber-800 dark:text-amber-200">{note.marker}</span>
+                                    <span className="mr-2 font-semibold text-slate-900 dark:text-slate-100">{note.marker}</span>
                                     <span>{note.content}</span>
                                   </li>
                                 ))}
@@ -1272,8 +1220,19 @@ export default function HomePage() {
                   </>
                 ) : null}
               </section>
-            ) : null}
-        </section>
+            ) : (
+              <section className="workspace-panel flex min-h-[520px] items-center justify-center p-8 text-center">
+                <div className="mx-auto max-w-md">
+                  <p className="eyebrow">Workspace</p>
+                  <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-slate-50">Load a source to begin</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                    Upload a PDF, image, or paste Chinese text. The preview and translation results will stay focused here.
+                  </p>
+                </div>
+              </section>
+            )}
+          </section>
+        </div>
       </div>
 
       <ApiKeySettings

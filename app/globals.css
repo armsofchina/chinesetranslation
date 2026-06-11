@@ -4,14 +4,8 @@
 
 :root {
   color-scheme: light;
-  --page-bg:
-    radial-gradient(circle at top left, rgba(174, 96, 62, 0.24), transparent 24rem),
-    radial-gradient(circle at top right, rgba(55, 99, 104, 0.2), transparent 26rem),
-    linear-gradient(180deg, #f8f1e3 0%, #efe4cf 52%, #dbc7a7 100%);
-  --page-bg-dark:
-    radial-gradient(circle at top left, rgba(148, 90, 48, 0.2), transparent 26rem),
-    radial-gradient(circle at top right, rgba(42, 97, 106, 0.24), transparent 28rem),
-    linear-gradient(180deg, #1b1b1b 0%, #141417 48%, #101215 100%);
+  --page-bg: #f6f7f9;
+  --page-bg-dark: #090b10;
 }
 
 .dark:root {
@@ -19,7 +13,7 @@
 }
 
 body {
-  @apply text-slate-900 antialiased dark:text-slate-100;
+  @apply text-slate-900 antialiased dark:text-slate-50;
   font-family: var(--font-ui), "Avenir Next", "Segoe UI", sans-serif;
   background: var(--page-bg);
   min-height: 100vh;
@@ -37,7 +31,6 @@ body {
   font-family: "Noto Serif CJK TC", "Noto Serif CJK SC", "Source Han Serif TC", "Source Han Serif SC",
     "Songti TC", "Songti SC", "Noto Sans CJK TC", "Noto Sans CJK SC", "PingFang TC", "PingFang SC",
     "Microsoft JhengHei", "Microsoft YaHei", "Heiti TC", serif;
-  /* Native CJK reading conveniences. */
   line-break: strict;
   word-break: normal;
   overflow-wrap: anywhere;
@@ -47,12 +40,10 @@ body {
   hanging-punctuation: allow-end;
 }
 
-/* Body paragraphs read more naturally with an indented first line. */
 .cn-paragraph {
   text-indent: 2em;
 }
 
-/* Headings, list items and table cells should not be indented. */
 .cn-text h1,
 .cn-text h2,
 .cn-text h3,
@@ -70,4 +61,38 @@ textarea {
 
 ::selection {
   @apply bg-sky-200 text-slate-900 dark:bg-sky-700 dark:text-slate-100;
+}
+
+@layer components {
+  .workspace-panel {
+    @apply rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/80;
+  }
+
+  .workspace-panel-quiet {
+    @apply rounded-xl border border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-950/50;
+  }
+
+  .reader-card {
+    @apply rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm dark:border-slate-800 dark:bg-slate-900/90;
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400;
+  }
+
+  .primary-button {
+    @apply inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200 dark:focus-visible:ring-offset-slate-950;
+  }
+
+  .secondary-button {
+    @apply inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-950;
+  }
+
+  .icon-button {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-950;
+  }
+
+  .status-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300;
+  }
 }

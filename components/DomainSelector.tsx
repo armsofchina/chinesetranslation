@@ -8,17 +8,9 @@ type DomainSelectorProps = {
   disabled?: boolean;
 };
 
-const TYPE_ICON: Record<TranslationDomain, string> = {
-  general: "✦",
-  historical: "📜",
-  legal: "⚖️",
-  medical: "🩺",
-  literary: "📖"
-};
-
 export default function DomainSelector({ value, onChange, disabled }: DomainSelectorProps) {
   return (
-    <div className="flex flex-wrap gap-1.5 rounded-full border border-amber-200 bg-amber-50/60 p-1 dark:border-slate-700 dark:bg-slate-950/60">
+    <div className="grid grid-cols-2 gap-1.5">
       {DOMAINS.map((domain) => (
         <button
           key={domain.id}
@@ -26,13 +18,12 @@ export default function DomainSelector({ value, onChange, disabled }: DomainSele
           onClick={() => onChange(domain.id)}
           disabled={disabled}
           title={domain.description}
-          className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
+          className={`min-h-8 rounded-md px-2 py-1.5 text-left text-[11px] font-medium leading-4 transition focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${
             domain.id === value
-              ? "bg-gradient-to-br from-amber-700 to-amber-600 text-amber-50 shadow-sm dark:from-amber-500 dark:to-amber-500 dark:text-slate-950"
-              : "text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-800"
+              ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
+              : "border border-slate-200 bg-white/70 text-slate-500 hover:bg-white hover:text-slate-700 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
           } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
         >
-          <span aria-hidden="true">{TYPE_ICON[domain.id]}</span>
           {domain.label}
         </button>
       ))}

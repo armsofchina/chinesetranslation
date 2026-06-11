@@ -7,24 +7,28 @@ type ThemeToggleProps = {
   onChange: (theme: ThemePreference) => void;
 };
 
-const OPTIONS: ThemePreference[] = ["system", "light", "dark"];
+const OPTIONS: Array<{ id: ThemePreference; label: string }> = [
+  { id: "system", label: "Auto" },
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" }
+];
 
 export default function ThemeToggle({ value, onChange }: ThemeToggleProps) {
   return (
-    <div className="inline-flex items-center rounded-xl border border-slate-300 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs dark:border-slate-800 dark:bg-slate-950/60">
       {OPTIONS.map((option) => (
         <button
-          key={option}
+          key={option.id}
           type="button"
-          onClick={() => onChange(option)}
-          className={`rounded-lg px-3 py-1.5 capitalize transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
-            value === option
-              ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+          onClick={() => onChange(option.id)}
+          className={`rounded-md px-2.5 py-1.5 font-medium transition focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${
+            value === option.id
+              ? "bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-slate-50"
+              : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
           }`}
-          aria-pressed={value === option}
+          aria-pressed={value === option.id}
         >
-          {option}
+          {option.label}
         </button>
       ))}
     </div>

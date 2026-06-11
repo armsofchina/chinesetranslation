@@ -11,7 +11,10 @@ export default function Toast({ message, visible }: ToastProps) {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-40 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+    <div
+      className="fixed bottom-6 right-6 z-40 translate-y-0 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg transition-all duration-200 data-[hiddden]:translate-y-2 data-[hidden]:opacity-9 dark:bg-slate-50 dark:text-slate-900"
+      data-hidden={!visible}
+    >
       {message}
     </div>
   );

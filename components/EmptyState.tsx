@@ -7,9 +7,9 @@ type EmptyStateProps = {
 
 export default function EmptyState({ title, description }: EmptyStateProps) {
   return (
-    <section className="rounded-3xl border border-dashed border-amber-300 bg-white/80 px-6 py-12 text-center dark:border-slate-700 dark:bg-slate-900/70">
-      <p className="text-base font-semibold text-slate-900 dark:text-slate-100">{title}</p>
-      <p className="mx-auto mt-2 max-w-xl text-sm text-slate-600 dark:text-slate-300">{description}</p>
+    <section className="rounded-2xl bg-white/60 px-6 py-14 text-center dark:bg-slate-900/50">
+      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{title}</p>
+      <p className="mx-auto mt-2 max-w-lg text-xs leading-relaxed text-slate-400 dark:text-slate-500">{description}</p>
     </section>
   );
 }

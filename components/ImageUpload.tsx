@@ -13,9 +13,6 @@ export default function ImageUpload({ fileName, onFileSelect }: ImageUploadProps
 
   return (
     <section>
-      <label className="block text-sm font-semibold text-slate-900 dark:text-slate-100" htmlFor={inputId}>
-        Upload Image
-      </label>
       <input
         id={inputId}
         type="file"
@@ -37,33 +34,17 @@ export default function ImageUpload({ fileName, onFileSelect }: ImageUploadProps
           const file = event.dataTransfer.files?.[0];
           onFileSelect(file ?? null);
         }}
-        className={`mt-3 block cursor-pointer rounded-3xl border-2 border-dashed px-6 py-10 text-center transition focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 dark:focus-within:ring-offset-slate-900 ${
+        className={`relative block cursor-pointer rounded-xl border border-dashed px-4 py-8 text-center transition ${
           isDragging
-            ? "border-amber-500 bg-amber-100/70 dark:bg-amber-900/30"
-            : "border-amber-200 bg-white/90 hover:border-amber-400 hover:bg-amber-50/80 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:border-amber-500 dark:hover:bg-amber-900/20"
+            ? "border-sky-400 bg-sky-50 dark:border-sky-500 dark:bg-sky-950/20"
+            : "border-slate-300 bg-slate-50/70 hover:border-slate-400 hover:bg-white dark:border-slate-700 dark:bg-slate-950/40 dark:hover:border-slate-600"
         }`}
       >
-        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Drop a scan, screenshot, or photo here</p>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">or click to browse image files</p>
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          <p className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-            PNG / JPG / WEBP / BMP / TIFF
-          </p>
-          <p className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
-            OCR first
-          </p>
-        </div>
-      </label>
-
-      {fileName ? (
-        <p className="mt-3 text-sm text-slate-700 dark:text-slate-200">
-          Selected image: <span className="font-medium">{fileName}</span>
+        <p className="break-words text-sm font-medium text-slate-800 dark:text-slate-100">
+          {fileName ? fileName : "Drop a scan, screenshot, or photo here, or click to browse"}
         </p>
-      ) : null}
-
-      <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-        Best for screenshots and scans. OCR quality depends on contrast, crop quality, and whether text is obscured.
-      </p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">PNG, JPG, WEBP, BMP, or TIFF</p>
+      </label>
     </section>
   );
 }
