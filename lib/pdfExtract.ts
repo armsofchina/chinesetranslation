@@ -2,7 +2,7 @@ import { PdfExtractResult } from "@/lib/types";
 import { cleanExtractedChineseText } from "@/lib/chineseTextCleanup";
 
 const SCANNED_PDF_MESSAGE =
-  "This PDF appears to contain scanned images rather than selectable text. OCR support can be added in a future version.";
+  "This PDF appears image-based. OCR translation can still be used, but names, seals, and dense tables may need manual review.";
 
 type PdfTextItem = {
   str?: string;

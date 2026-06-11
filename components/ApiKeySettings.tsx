@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent } from "react";
+import { FormEvent, useEffect, useId } from "react";
 
 type ApiKeySettingsProps = {
   isOpen: boolean;
@@ -25,6 +25,29 @@ export default function ApiKeySettings({
   onSave,
   onClearSaved
 }: ApiKeySettingsProps) {
+  const titleId = useId();
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) {
     return null;
   }
@@ -35,11 +58,19 @@ export default function ApiKeySettings({
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/60 p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-300 bg-white p-6 shadow-soft dark:border-slate-700 dark:bg-slate-900">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/60 p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="w-full max-w-lg rounded-[28px] border border-slate-300 bg-white p-6 shadow-soft dark:border-slate-700 dark:bg-slate-900"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="mb-5 flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">API Key Settings</h2>
+            <h2 id={titleId} className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+              Connection Settings
+            </h2>
             <span className="mt-2 inline-flex rounded-full border border-slate-300 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
               {statusLabel}
             </span>
@@ -53,22 +84,18 @@ export default function ApiKeySettings({
           </button>
         </div>
 
-        <div className="mb-5 rounded-xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-900 dark:bg-sky-950/40">
-          <p className="text-sm font-medium text-sky-900 dark:text-sky-100">
-            Want higher translation limits?
-          </p>
+        <div className="mb-5 rounded-2xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-900 dark:bg-sky-950/40">
+          <p className="text-sm font-medium text-sky-900 dark:text-sky-100">Use your own PPQ key only if you need it.</p>
           <p className="mt-1 text-xs text-sky-800 dark:text-sky-200">
-            You can use your own PPQ API key. This gives you your own request/credit limits instead of relying on the app
-            default key.
+            The app already works with the shared server key. A personal key is helpful when you want your own billing,
+            higher limits, or separate usage tracking.
           </p>
 
-          <div className="mt-3 space-y-2 text-xs text-slate-700 dark:text-slate-200">
-            <p className="font-semibold text-slate-900 dark:text-slate-100">Quick tutorial: get a PPQ key</p>
-            <p>1) Open PPQ API docs and sign in at ppq.ai/api-docs.</p>
-            <p>2) Create an API key from your PPQ account.</p>
-            <p>3) Name your key (for example: Chinese Translator App).</p>
-            <p>4) Copy the key once shown (it may only be visible one time).</p>
-            <p>5) Paste it below and click Save.</p>
+          <div className="mt-3 space-y-1.5 text-xs text-slate-700 dark:text-slate-200">
+            <p className="font-semibold text-slate-900 dark:text-slate-100">Quick setup</p>
+            <p>1. Open PPQ and sign in.</p>
+            <p>2. Create an API key in your account settings.</p>
+            <p>3. Paste it here and save it locally on this device if you want.</p>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -106,7 +133,7 @@ export default function ApiKeySettings({
           </label>
 
           <p className="text-xs text-slate-600 dark:text-slate-300">
-            Optional. Add your own key if you want translations billed to your PPQ account.
+            Optional. Leave this blank to keep using the app's shared server key.
           </p>
 
           <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
@@ -136,7 +163,7 @@ export default function ApiKeySettings({
           </div>
 
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Your key is only used to send translation requests. It is not stored on our server.
+            Your key is only used for translation requests and is never stored on the server.
           </p>
         </form>
       </div>

@@ -201,14 +201,16 @@ export const extractEntitiesWithLlm = async ({
   text,
   apiKey,
   model,
-  domain
+  domain,
+  ppqUrl
 }: {
   text: string;
   apiKey: string;
   model: string;
   domain: TranslationDomain;
+  ppqUrl?: string;
 }): Promise<ExtractedEntity[]> => {
-  const PPQ_URL = process.env.PPQ_CHAT_COMPLETIONS_URL || "https://api.ppq.ai/chat/completions";
+  const PPQ_URL = ppqUrl || process.env.PPQ_CHAT_COMPLETIONS_URL || "https://api.ppq.ai/chat/completions";
 
   const domainNote: Record<TranslationDomain, string> = {
     general: "",

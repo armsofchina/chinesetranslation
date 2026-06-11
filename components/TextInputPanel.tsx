@@ -25,7 +25,10 @@ export default function TextInputPanel({ value, onChange, onClear }: TextInputPa
         placeholder="Paste Traditional or Simplified Chinese text here..."
         className="mt-3 h-64 w-full resize-y rounded-2xl border border-amber-200 bg-white/90 px-4 py-3 text-sm leading-7 text-slate-900 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-amber-900/50"
       />
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{value.length.toLocaleString()} characters</p>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+        <p>{value.length.toLocaleString()} characters</p>
+        <p>Best for quick passages, short excerpts, and spot-checks.</p>
+      </div>
     </section>
   );
 }

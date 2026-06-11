@@ -43,11 +43,16 @@ export default function FileUpload({ fileName, onFileSelect }: FileUploadProps) 
             : "border-amber-200 bg-white/90 hover:border-amber-400 hover:bg-amber-50/80 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:border-amber-500 dark:hover:bg-amber-900/20"
         }`}
       >
-        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Drag and drop your PDF here</p>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">or click to browse files</p>
-        <p className="mt-4 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          PDF only
-        </p>
+        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Drop a Chinese PDF here</p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">or click to browse from your device</p>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <p className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            PDF only
+          </p>
+          <p className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+            OCR ready
+          </p>
+        </div>
       </label>
 
       {fileName ? (
@@ -56,8 +61,9 @@ export default function FileUpload({ fileName, onFileSelect }: FileUploadProps) 
         </p>
       ) : null}
 
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-        Selectable PDFs are supported. Scanned image-only PDFs may require OCR in a future version.
+      <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+        Selectable pages translate directly. Image-based pages can automatically fall back to OCR, though dense tables,
+        stamps, and low-resolution scans may still need manual review.
       </p>
     </section>
   );

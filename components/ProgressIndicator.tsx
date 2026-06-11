@@ -60,6 +60,16 @@ export default function ProgressIndicator({
 
   const roundedPercent = Math.round(percent);
   const isDone = step === "done";
+  const heading =
+    step === "extracting"
+      ? "Extracting source text"
+      : step === "preparing"
+        ? "Preparing translation"
+        : step === "generating"
+          ? "Finalizing output"
+          : isDone
+            ? "Translation complete"
+            : "Translating live";
 
   return (
     <section className="overflow-hidden rounded-3xl border border-amber-200/70 bg-white/90 shadow-soft backdrop-blur dark:border-slate-700 dark:bg-slate-900/80">
@@ -78,9 +88,7 @@ export default function ProgressIndicator({
               <span className="absolute inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-amber-400 opacity-75" />
             ) : null}
           </span>
-          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-            {isDone ? "Translation complete" : "Translating…"}
-          </p>
+          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{heading}</p>
           {streaming && !isDone ? (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
               Live

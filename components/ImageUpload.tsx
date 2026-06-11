@@ -43,11 +43,16 @@ export default function ImageUpload({ fileName, onFileSelect }: ImageUploadProps
             : "border-amber-200 bg-white/90 hover:border-amber-400 hover:bg-amber-50/80 dark:border-slate-700 dark:bg-slate-950/60 dark:hover:border-amber-500 dark:hover:bg-amber-900/20"
         }`}
       >
-        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Drag and drop an image here</p>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">or click to browse files</p>
-        <p className="mt-4 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          PNG / JPG / WEBP / BMP / TIFF
-        </p>
+        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Drop a scan, screenshot, or photo here</p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">or click to browse image files</p>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <p className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            PNG / JPG / WEBP / BMP / TIFF
+          </p>
+          <p className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+            OCR first
+          </p>
+        </div>
       </label>
 
       {fileName ? (
@@ -56,8 +61,8 @@ export default function ImageUpload({ fileName, onFileSelect }: ImageUploadProps
         </p>
       ) : null}
 
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-        This mode uses vision OCR translation for non-selectable text in images.
+      <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+        Best for screenshots and scans. OCR quality depends on contrast, crop quality, and whether text is obscured.
       </p>
     </section>
   );

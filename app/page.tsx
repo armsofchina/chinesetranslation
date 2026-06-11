@@ -5,7 +5,6 @@ import ApiKeySettings from "@/components/ApiKeySettings";
 import AppHeader from "@/components/AppHeader";
 import ChineseSourceBody from "@/components/ChineseSourceBody";
 import DomainSelector from "@/components/DomainSelector";
-import EmptyState from "@/components/EmptyState";
 import EntityGlossary, { GlossaryEntry } from "@/components/EntityGlossary";
 import ErrorState from "@/components/ErrorState";
 import ExportButtons from "@/components/ExportButtons";
@@ -23,12 +22,12 @@ import TranslationTabs, { TranslationView } from "@/components/TranslationTabs";
 import { downloadBilingualHtml } from "@/lib/exportHtml";
 import { downloadEnglishPdf } from "@/lib/exportPdf";
 import { downloadTxt } from "@/lib/exportTxt";
-import { ExtractedEntity, extractEntitiesHeuristic, extractEntitiesWithLlm } from "@/lib/extractEntities";
+import { ExtractedEntity, extractEntitiesHeuristic } from "@/lib/extractEntities";
 import { normalizeTranslationFootnotes, parseTranslationText } from "@/lib/footnotes";
 import { fileToDataUrl, hasSelectableTextInPdfPage, renderPdfPagesToJpegDataUrls } from "@/lib/imageOcr";
 import { extractSelectableTextFromPdf } from "@/lib/pdfExtract";
-import { TranslationDomain } from "@/lib/prompts";
-import { isReasonablyEnglish, withSmartRetry } from "@/lib/smartRetry";
+import { DOMAINS, TranslationDomain } from "@/lib/prompts";
+import { withSmartRetry } from "@/lib/smartRetry";
 import { streamTranslation } from "@/lib/streamClient";
 import {
   createChunksFromPastedText,
@@ -43,7 +42,7 @@ const USER_API_KEY_STORAGE = "translator-user-ppq-key";
 const LEGACY_USER_API_KEY_STORAGE = "translator-user-openrouter-key";
 
 const SCANNED_MESSAGE =
-  "This PDF appears to contain scanned images rather than selectable text. OCR support can be added in a future version.";
+  "This PDF appears image-based. The workspace can translate scanned pages with OCR, but names, seals, and dense tables may still need manual review.";
 
 /** Builds a rolling context summary from the end of the translated text. */
 const makeRollingSummary = (text: string, maxLen = 180): string => {
@@ -83,6 +82,7 @@ export default function HomePage() {
   const [usedModel, setUsedModel] = useState("");
   const [progressStep, setProgressStep] = useState<ProgressStep>("idle");
   const [documentFontSize, setDocumentFontSize] = useState(16);
+  const [readingWidth, setReadingWidth] = useState<"focused" | "wide">("focused");
 
   // Streaming / live progress state.
   const [liveText, setLiveText] = useState("");
@@ -160,16 +160,93 @@ export default function HomePage() {
     }
     return "Pasted Chinese text";
   }, [inputMode, pdfName, imageName]);
+  const pagesWithSelectableText = useMemo(
+    () => pdfPages.filter((page) => hasSelectableTextInPdfPage(page.text)).length,
+    [pdfPages]
+  );
+  const ocrPageCount = useMemo(() => Math.max(pdfTotalPages - pagesWithSelectableText, 0), [pagesWithSelectableText, pdfTotalPages]);
+  const hasTranslation = useMemo(
+    () => translatedChunks.length > 0 || translationPages.some((page) => page.translatedText.trim()),
+    [translatedChunks, translationPages]
+  );
+  const hasSourceLoaded = useMemo(() => {
+    if (inputMode === "pdf") {
+      return pdfTotalPages > 0;
+    }
+    if (inputMode === "image") {
+      return Boolean(imageDataUrl);
+    }
+    return Boolean(pastedText.trim());
+  }, [imageDataUrl, inputMode, pastedText, pdfTotalPages]);
+  const selectedDomain = useMemo(() => DOMAINS.find((entry) => entry.id === domain) ?? DOMAINS[0], [domain]);
+  const lockedGlossaryCount = useMemo(
+    () => glossaryEntries.filter((entry) => entry.locked && entry.english.trim()).length,
+    [glossaryEntries]
+  );
+  const sourceSummary = useMemo(() => {
+    if (inputMode === "pdf") {
+      if (!pdfTotalPages) {
+        return {
+          title: "No PDF loaded yet",
+          detail: "Upload a Chinese PDF to preview pages and translate them in the review workspace.",
+          helper: "Selectable text translates fastest. Image-based pages can fall back to OCR."
+        };
+      }
+
+      return {
+        title: pdfName || "PDF ready",
+        detail: `${pdfTotalPages} page${pdfTotalPages === 1 ? "" : "s"} loaded · ${pagesWithSelectableText} selectable · ${ocrPageCount} OCR candidate${ocrPageCount === 1 ? "" : "s"}`,
+        helper: ocrPageCount > 0 ? SCANNED_MESSAGE : "This document appears mostly text-selectable and is ready for translation."
+      };
+    }
+
+    if (inputMode === "image") {
+      if (!imageDataUrl) {
+        return {
+          title: "No image loaded yet",
+          detail: "Upload a screenshot, scan, or photo to run OCR-assisted translation.",
+          helper: "Higher contrast and tighter crops usually produce better OCR output."
+        };
+      }
+
+      return {
+        title: imageName || "Image ready",
+        detail: "Vision OCR mode is ready for translation.",
+        helper: "Review names, chart labels, and tables after translation for OCR drift."
+      };
+    }
+
+    if (!pastedText.trim()) {
+      return {
+        title: "No pasted text yet",
+        detail: "Paste Traditional or Simplified Chinese to translate it immediately.",
+        helper: "Short passages are fastest here. Longer texts benefit from glossary setup before you run them."
+      };
+    }
+
+    const sectionCount = sourceChunks.length;
+    return {
+      title: "Text ready",
+      detail: `${pastedText.length.toLocaleString()} characters · ${sectionCount} section${sectionCount === 1 ? "" : "s"} to translate`,
+      helper: "Use the glossary and domain selector before translating if terminology matters."
+    };
+  }, [imageDataUrl, imageName, inputMode, ocrPageCount, pagesWithSelectableText, pastedText, pdfName, pdfTotalPages, sourceChunks.length]);
 
   const translateDisabled =
     processing ||
     (inputMode === "pdf" ? pdfTotalPages === 0 : inputMode === "image" ? !imageDataUrl : sourceChunks.length === 0);
   const usingCustomKey = Boolean(activeUserApiKey.trim());
   const canShowPdfSideBySide = inputMode === "pdf" && Boolean(pdfObjectUrl) && pdfTotalPages > 0;
-  const canShowImageSideBySide = inputMode === "image" && Boolean(imageDataUrl) && translatedChunks.length > 0;
-  const showResultsPanel =
-    translatedChunks.length > 0 || canShowPdfSideBySide || canShowImageSideBySide || processing;
+  const canShowImageSideBySide = inputMode === "image" && Boolean(imageDataUrl) && hasTranslation;
+  const showResultsPanel = hasSourceLoaded || hasTranslation || processing;
   const showLivePreview = isStreaming && activeView === "english";
+  const readingWidthClass = readingWidth === "wide" ? "max-w-5xl" : "max-w-3xl";
+
+  useEffect(() => {
+    if (!processing && !hasTranslation && hasSourceLoaded) {
+      setActiveView("original");
+    }
+  }, [hasSourceLoaded, hasTranslation, processing]);
 
   /** Locked glossary as a plain Record for API payload. */
   const lockedGlossary = useMemo(() => {
@@ -232,6 +309,7 @@ export default function HomePage() {
     }
 
     setInputMode("pdf");
+    setActiveView("original");
     resetImageState();
     setPdfName(file.name);
     setPdfFile(file);
@@ -264,6 +342,9 @@ export default function HomePage() {
     const fullText = result.pages.map((p) => p.text).join("\n\n");
     const heuristics = extractEntitiesHeuristic(fullText);
     setExtractedEntities(heuristics);
+
+    // Fire off LLM entity extraction in the background to auto-fill English.
+    fetchEntityTranslations(fullText);
   };
 
   const handleImageSelect = async (file: File | null) => {
@@ -284,6 +365,7 @@ export default function HomePage() {
     }
 
     setInputMode("image");
+    setActiveView("original");
     resetPdfState();
     setImageName(file.name);
 
@@ -320,6 +402,45 @@ export default function HomePage() {
     setRememberKey(false);
     window.localStorage.removeItem(USER_API_KEY_STORAGE);
     window.localStorage.removeItem(LEGACY_USER_API_KEY_STORAGE);
+  };
+
+  const fetchEntityTranslations = async (text: string) => {
+    try {
+      const response = await fetch("/api/extract-entities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          domain,
+          userPpqApiKey: activeUserApiKey || undefined
+        })
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as { entities?: ExtractedEntity[] };
+      if (!payload.entities || payload.entities.length === 0) {
+        return;
+      }
+
+      // Merge LLM-provided English translations into existing extracted entities.
+      setExtractedEntities((prev) => {
+        const map = new Map(prev.map((e) => [e.chinese, e]));
+        for (const entity of payload.entities!) {
+          const existing = map.get(entity.chinese);
+          if (existing) {
+            map.set(entity.chinese, { ...existing, english: entity.english || existing.english });
+          } else {
+            map.set(entity.chinese, entity);
+          }
+        }
+        return Array.from(map.values());
+      });
+    } catch {
+      // Silently fail — glossary will still show heuristic Chinese terms.
+    }
   };
 
   const handleTranslatePdfPageByPage = async () => {
@@ -550,6 +671,7 @@ export default function HomePage() {
       const sampleText = sourceChunks.map((c) => c.originalChinese).join("\n\n");
       const heuristics = extractEntitiesHeuristic(sampleText);
       setExtractedEntities(heuristics);
+      fetchEntityTranslations(sampleText);
     }
 
     try {
@@ -633,15 +755,13 @@ export default function HomePage() {
     setErrorMessage("");
     setUsedModel("");
     setProgressStep("idle");
-    setDocumentFontSize(16);
     setLiveText("");
     setIsStreaming(false);
     setCompletedUnits(0);
     setTotalUnits(0);
-    setDomain("general");
-    setGlossaryEntries([]);
     setExtractedEntities([]);
     setPreviousSummary("");
+    setActiveView("original");
   };
 
   const handleCopyEnglish = async () => {
@@ -689,288 +809,496 @@ export default function HomePage() {
   };
 
   return (
-    <main className="min-h-screen px-4 py-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <AppHeader theme={theme} onThemeChange={setTheme} onOpenApiSettings={() => setIsSettingsOpen(true)} />
-
-        <section className="rounded-[30px] border border-amber-200/70 bg-white/85 p-6 shadow-soft backdrop-blur dark:border-slate-700 dark:bg-slate-900/75">
-          <div className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-600 text-sm font-bold text-amber-50">
-              1
-            </span>
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Add Chinese source content</h2>
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                Pick an input method, then translate to clean, review-ready English.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-5">
-            <InputModeTabs value={inputMode} onChange={setInputMode} />
-          </div>
-
-          <div className="mt-5 rounded-3xl border border-amber-200/60 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-950/60">
-            {inputMode === "pdf" ? (
-              <FileUpload fileName={pdfName} onFileSelect={handleFileSelect} />
-            ) : inputMode === "image" ? (
-              <ImageUpload fileName={imageName} onFileSelect={handleImageSelect} />
-            ) : (
-              <TextInputPanel value={pastedText} onChange={setPastedText} onClear={() => setPastedText("")} />
-            )}
-          </div>
-
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleTranslate}
-              disabled={translateDisabled}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-amber-700 to-amber-600 px-5 py-2.5 text-sm font-semibold text-amber-50 shadow-sm transition hover:from-amber-600 hover:to-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-slate-900"
-            >
-              {processing ? (
-                <>
-                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-200 border-t-transparent" />
-                  Translating…
-                </>
-              ) : (
-                "Translate to English"
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={processing}
-              className="rounded-full border border-slate-300 bg-white/90 px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-900"
-            >
-              Reset
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsGlossaryOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white/90 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-900"
-            >
-              <span>📖</span>
-              Glossary
-              {glossaryEntries.filter((e) => e.locked).length > 0 ? (
-                <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
-                  {glossaryEntries.filter((e) => e.locked).length}
-                </span>
-              ) : null}
-            </button>
-
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-                  usingCustomKey
-                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
-                    : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                }`}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${usingCustomKey ? "bg-emerald-500" : "bg-slate-400"}`} />
-                {usingCustomKey ? "Your PPQ key" : "Default app key"}
-              </span>
-              {usedModel ? (
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                  {usedModel}
-                </span>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Domain:</span>
-            <DomainSelector value={domain} onChange={setDomain} disabled={processing} />
-          </div>
-        </section>
-
-        <ProgressIndicator
-          step={progressStep}
-          processing={processing}
-          completedUnits={completedUnits}
-          totalUnits={totalUnits}
-          statusMessage={statusMessage}
-          streaming={isStreaming}
+    <main className="min-h-screen px-4 py-6 lg:px-6">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <AppHeader
+          theme={theme}
+          usingCustomKey={usingCustomKey}
+          onThemeChange={setTheme}
+          onOpenApiSettings={() => setIsSettingsOpen(true)}
         />
 
-        <ErrorState message={errorMessage} />
-
-        {showResultsPanel ? (
-          <section className="space-y-4 rounded-[30px] border border-amber-200/70 bg-white/85 p-6 shadow-soft backdrop-blur dark:border-slate-700 dark:bg-slate-900/75">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Translation results</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {processing && totalUnits > 0
-                    ? `Translating live — ${Math.min(completedUnits, totalUnits)} of ${totalUnits} ${
-                        inputMode === "pdf" ? "pages" : "sections"
-                      } done`
-                    : "Review, copy, and export as HTML, TXT, or PDF."}
-                </p>
+        <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-start">
+          <aside className="space-y-5 xl:sticky xl:top-6">
+            <section className="rounded-[30px] border border-amber-200/70 bg-white/85 p-6 shadow-soft backdrop-blur dark:border-slate-700 dark:bg-slate-900/75">
+              <div className="flex items-center gap-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-600 text-sm font-bold text-amber-50">
+                  1
+                </span>
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Add source content</h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    Choose the input that best matches your source, then preview it before translating.
+                  </p>
+                </div>
               </div>
-              <ExportButtons
-                onCopy={handleCopyEnglish}
-                onDownloadHtml={handleDownloadHtml}
-                onDownloadTxt={handleDownloadTxt}
-                onDownloadPdf={handleDownloadPdf}
-                copied={toastVisible && toastMessage === "Copied to clipboard."}
-                disabled={!englishText || processing}
-              />
-            </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <TranslationTabs active={activeView} onChange={setActiveView} />
+              <div className="mt-5">
+                <InputModeTabs value={inputMode} onChange={setInputMode} />
+              </div>
 
-              {activeView === "english" || (activeView === "original" && inputMode !== "image") ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setDocumentFontSize((prev) => Math.max(14, prev - 1))}
-                    className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                  >
-                    A-
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDocumentFontSize((prev) => Math.min(22, prev + 1))}
-                    className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                  >
-                    A+
-                  </button>
+              <div className="mt-5 rounded-3xl border border-amber-200/60 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-950/60">
+                {inputMode === "pdf" ? (
+                  <FileUpload fileName={pdfName} onFileSelect={handleFileSelect} />
+                ) : inputMode === "image" ? (
+                  <ImageUpload fileName={imageName} onFileSelect={handleImageSelect} />
+                ) : (
+                  <TextInputPanel value={pastedText} onChange={setPastedText} onClear={() => setPastedText("")} />
+                )}
+              </div>
+
+              <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/70">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Source Status
+                </p>
+                <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{sourceSummary.title}</p>
+                <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{sourceSummary.detail}</p>
+                <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">{sourceSummary.helper}</p>
+              </div>
+            </section>
+
+            <section className="rounded-[30px] border border-amber-200/70 bg-white/85 p-6 shadow-soft backdrop-blur dark:border-slate-700 dark:bg-slate-900/75">
+              <div className="flex items-center gap-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white dark:bg-slate-100 dark:text-slate-950">
+                  2
+                </span>
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Tune the translation</h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    Set terminology, domain, and connection settings before you run the document.
+                  </p>
                 </div>
-              ) : null}
-            </div>
+              </div>
 
-            {activeView === "original" ? (
-              inputMode === "image" ? (
-                <article className="rounded-3xl border border-amber-200/70 bg-white/90 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Original Image</p>
-                  {imageDataUrl ? (
-                    <img src={imageDataUrl} alt="Uploaded source" className="max-h-[72vh] w-full rounded-2xl border border-amber-100 object-contain dark:border-slate-700" />
-                  ) : (
-                    <p className="text-sm text-slate-600 dark:text-slate-300">No image loaded.</p>
-                  )}
-                </article>
-              ) : inputMode === "pdf" ? (
-                <div className="space-y-4">
-                  {pdfPages.map((page) => (
-                    <article
-                      key={`orig-page-${page.pageNumber}`}
-                      className="rounded-3xl border border-amber-200/70 bg-white/90 p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900/70"
-                    >
-                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        第 {page.pageNumber} 頁 · Page {page.pageNumber}
+              <div className="mt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    Domain
+                  </span>
+                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                    {selectedDomain.label}
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <DomainSelector value={domain} onChange={setDomain} disabled={processing} />
+                </div>
+                <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">{selectedDomain.description}</p>
+              </div>
+
+              <div className="mt-5 grid gap-3">
+                <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/70">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Glossary control</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        Lock preferred names and technical terms before you translate.
                       </p>
-                      <div
-                        className="text-slate-800 dark:text-slate-100"
-                        style={{ fontSize: `${documentFontSize}px` }}
-                      >
-                        {page.text.trim() ? (
-                          <ChineseSourceBody text={page.text} />
-                        ) : (
-                          <p className="cn-text text-sm text-slate-500 dark:text-slate-400">
-                            此頁未偵測到可選取的文字（可能為掃描圖檔）。
-                          </p>
-                        )}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <article className="mx-auto w-full max-w-4xl rounded-3xl border border-amber-200/70 bg-white/90 p-7 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
-                  <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Original Chinese
-                  </p>
-                  <div className="text-slate-800 dark:text-slate-100" style={{ fontSize: `${documentFontSize}px` }}>
-                    <ChineseSourceBody text={pastedText} />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsGlossaryOpen(true)}
+                      className="rounded-full border border-slate-300 bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-900"
+                    >
+                      Open glossary
+                    </button>
                   </div>
-                </article>
-              )
-            ) : null}
-
-            {activeView === "english" ? (
-              <article className="mx-auto w-full max-w-4xl rounded-3xl border border-amber-200/70 bg-white/90 p-7 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
-                <div className="mb-5 flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    English Translation
-                  </p>
-                  {isStreaming ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
-                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                      Streaming
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      {extractedEntities.length} detected
                     </span>
-                  ) : null}
-                </div>
-                <div
-                  className="document-text text-slate-800 dark:text-slate-100"
-                  style={{ fontFamily: "var(--font-doc), Georgia, serif", fontSize: `${documentFontSize}px`, lineHeight: 1.9 }}
-                >
-                  {parsedEnglishText.bodyParagraphs.length > 0 ? (
-                    <StructuredTranslationBody paragraphs={parsedEnglishText.bodyParagraphs} />
-                  ) : null}
-
-                  {/* Live streaming text for the chunk currently being translated. */}
-                  {showLivePreview && liveText ? (
-                    <p className={parsedEnglishText.bodyParagraphs.length > 0 ? "mt-5 whitespace-pre-wrap" : "whitespace-pre-wrap"}>
-                      {liveText}
-                      <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse bg-amber-500 align-middle" />
-                    </p>
-                  ) : null}
-
-                  {/* Placeholder while waiting for the first tokens. */}
-                  {processing && !englishText && !liveText ? (
-                    <div className="space-y-3">
-                      <div className="h-4 w-3/4 animate-pulse rounded bg-amber-100/80 dark:bg-slate-800" />
-                      <div className="h-4 w-full animate-pulse rounded bg-amber-100/80 dark:bg-slate-800" />
-                      <div className="h-4 w-5/6 animate-pulse rounded bg-amber-100/80 dark:bg-slate-800" />
-                      <p className="pt-2 text-sm text-slate-400 dark:text-slate-500">Waiting for the model to respond…</p>
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                      {lockedGlossaryCount} locked
+                    </span>
+                  </div>
+                  {lockedGlossaryCount > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {glossaryEntries
+                        .filter((entry) => entry.locked && entry.english.trim())
+                        .slice(0, 3)
+                        .map((entry) => (
+                          <span
+                            key={`${entry.chinese}-${entry.english}`}
+                            className="rounded-full border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
+                          >
+                            {entry.chinese}
+                            {" -> "}
+                            {entry.english}
+                          </span>
+                        ))}
                     </div>
                   ) : null}
-
-                  {parsedEnglishText.footnotes.length > 0 ? (
-                    <section className="mt-8 rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4 dark:border-amber-900/80 dark:bg-amber-950/30">
-                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
-                        Footnotes
-                      </p>
-                      <ol className="space-y-2">
-                        {parsedEnglishText.footnotes.map((note) => (
-                          <li
-                            key={`${note.marker}-${note.content.slice(0, 24)}`}
-                            className="text-sm leading-8 text-slate-700 dark:text-slate-200"
-                          >
-                            <span className="mr-2 font-semibold text-amber-800 dark:text-amber-200">{note.marker}</span>
-                            <span>{note.content}</span>
-                          </li>
-                        ))}
-                      </ol>
-                    </section>
-                  ) : null}
                 </div>
-              </article>
-            ) : null}
 
-            {activeView === "side-by-side" ? (
-              canShowPdfSideBySide ? (
-                <PdfSideBySideView
-                  pdfUrl={pdfObjectUrl ?? ""}
-                  totalPages={pdfTotalPages}
-                  extractedPages={pdfPages}
-                  translationPages={translationPages}
-                  scannedMessage={pdfScannedMessage}
-                />
-              ) : canShowImageSideBySide ? (
-                <ImageSideBySideView imageDataUrl={imageDataUrl ?? ""} translatedText={translationPages[0]?.translatedText || ""} />
-              ) : (
-                <SideBySideView chunks={translatedChunks} />
-              )
-            ) : null}
+                <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/70">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Connection</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        Use the shared app key, or switch to a personal PPQ key if you need separate limits.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsSettingsOpen(true)}
+                      className="rounded-full border border-slate-300 bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-900"
+                    >
+                      Manage
+                    </button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                        usingCustomKey
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
+                          : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${usingCustomKey ? "bg-emerald-500" : "bg-slate-400"}`} />
+                      {usingCustomKey ? "Personal PPQ key active" : "Using shared app key"}
+                    </span>
+                    {usedModel ? (
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {usedModel}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={handleTranslate}
+                  disabled={translateDisabled}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-br from-amber-700 to-amber-600 px-5 py-3 text-sm font-semibold text-amber-50 shadow-sm transition hover:from-amber-600 hover:to-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-slate-900"
+                >
+                  {processing ? (
+                    <>
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-200 border-t-transparent" />
+                      Translating...
+                    </>
+                  ) : (
+                    "Translate to English"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  disabled={processing}
+                  className="rounded-full border border-slate-300 bg-white/90 px-5 py-3 text-sm font-medium text-slate-700 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-slate-900"
+                >
+                  New document
+                </button>
+              </div>
+            </section>
+          </aside>
+
+          <section className="space-y-5">
+            <ProgressIndicator
+              step={progressStep}
+              processing={processing}
+              completedUnits={completedUnits}
+              totalUnits={totalUnits}
+              statusMessage={statusMessage}
+              streaming={isStreaming}
+            />
+
+            <ErrorState message={errorMessage} />
+
+            {showResultsPanel ? (
+              <section className="space-y-4 rounded-[30px] border border-amber-200/70 bg-white/85 p-6 shadow-soft backdrop-blur dark:border-slate-700 dark:bg-slate-900/75">
+                {hasTranslation || processing ? (
+                  <div className="sticky top-4 z-10 space-y-4 rounded-[26px] border border-amber-200/60 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                          {processing ? "Translation in progress" : "Translation results"}
+                        </h3>
+                        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                          {processing && totalUnits > 0
+                            ? `Working through ${Math.min(completedUnits, totalUnits)} of ${totalUnits} ${inputMode === "pdf" ? "pages" : inputMode === "image" ? "image steps" : "sections"}`
+                            : `Review ${sourceLabel}, compare layouts, then export the final English output.`}
+                        </p>
+                      </div>
+                      <ExportButtons
+                        onCopy={handleCopyEnglish}
+                        onDownloadHtml={handleDownloadHtml}
+                        onDownloadTxt={handleDownloadTxt}
+                        onDownloadPdf={handleDownloadPdf}
+                        copied={toastVisible && toastMessage === "Copied to clipboard."}
+                        disabled={!englishText || processing}
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <TranslationTabs active={activeView} onChange={setActiveView} />
+                      <div className="flex flex-wrap items-center gap-2">
+                        {(activeView === "english" || (activeView === "original" && inputMode !== "image")) ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setDocumentFontSize((prev) => Math.max(14, prev - 1))}
+                              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                              A-
+                            </button>
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                              {documentFontSize}px
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setDocumentFontSize((prev) => Math.min(22, prev + 1))}
+                              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                              A+
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDocumentFontSize(16)}
+                              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                              Reset size
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setReadingWidth((prev) => (prev === "focused" ? "wide" : "focused"))}
+                              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                              {readingWidth === "focused" ? "Wider page" : "Focused width"}
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-[26px] border border-amber-200/60 bg-white/95 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/90">
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Source preview</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                      Review the source, adjust your glossary or domain if needed, then run translation when you are ready.
+                    </p>
+                  </div>
+                )}
+
+                {!hasTranslation && !processing ? (
+                  inputMode === "image" ? (
+                    <article className="rounded-3xl border border-amber-200/70 bg-white/90 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Source Image</p>
+                      {imageDataUrl ? (
+                        <img
+                          src={imageDataUrl}
+                          alt="Uploaded source"
+                          className="max-h-[72vh] w-full rounded-2xl border border-amber-100 object-contain dark:border-slate-700"
+                        />
+                      ) : (
+                        <p className="text-sm text-slate-600 dark:text-slate-300">No image loaded.</p>
+                      )}
+                    </article>
+                  ) : inputMode === "pdf" ? (
+                    <article className="rounded-3xl border border-amber-200/70 bg-white/90 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Source PDF</p>
+                          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                            {pdfName ? `${pdfName} · ${pdfTotalPages} pages` : "Upload a PDF to preview it here."}
+                          </p>
+                        </div>
+                        {ocrPageCount > 0 ? (
+                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                            {ocrPageCount} OCR page{ocrPageCount === 1 ? "" : "s"} detected
+                          </span>
+                        ) : null}
+                      </div>
+                      {pdfObjectUrl ? (
+                        <iframe
+                          src={`${pdfObjectUrl}#page=1&zoom=page-width`}
+                          title="Source PDF preview"
+                          className="mt-4 h-[72vh] min-h-[560px] w-full rounded-2xl border border-amber-100 bg-white dark:border-slate-700"
+                        />
+                      ) : (
+                        <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">No PDF loaded.</p>
+                      )}
+                    </article>
+                  ) : (
+                    <article className={`mx-auto w-full ${readingWidthClass} rounded-3xl border border-amber-200/70 bg-white/90 p-7 shadow-sm dark:border-slate-700 dark:bg-slate-900/70`}>
+                      <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Original Chinese
+                      </p>
+                      <div className="text-slate-800 dark:text-slate-100" style={{ fontSize: `${documentFontSize}px` }}>
+                        <ChineseSourceBody text={pastedText} />
+                      </div>
+                    </article>
+                  )
+                ) : null}
+
+                {hasTranslation || processing ? (
+                  <>
+                    {activeView === "original" ? (
+                      inputMode === "image" ? (
+                        <article className="rounded-3xl border border-amber-200/70 bg-white/90 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Original Image</p>
+                          {imageDataUrl ? (
+                            <img
+                              src={imageDataUrl}
+                              alt="Uploaded source"
+                              className="max-h-[72vh] w-full rounded-2xl border border-amber-100 object-contain dark:border-slate-700"
+                            />
+                          ) : (
+                            <p className="text-sm text-slate-600 dark:text-slate-300">No image loaded.</p>
+                          )}
+                        </article>
+                      ) : inputMode === "pdf" ? (
+                        <div className="space-y-4">
+                          {pdfPages.map((page) => (
+                            <article
+                              key={`orig-page-${page.pageNumber}`}
+                              className={`mx-auto w-full ${readingWidthClass} rounded-3xl border border-amber-200/70 bg-white/90 p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900/70`}
+                            >
+                              <div className="mb-3 flex flex-wrap items-center gap-2">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                  第 {page.pageNumber} 頁 · Page {page.pageNumber}
+                                </p>
+                                {!page.text.trim() ? (
+                                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                                    OCR page
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div
+                                className="text-slate-800 dark:text-slate-100"
+                                style={{ fontSize: `${documentFontSize}px` }}
+                              >
+                                {page.text.trim() ? (
+                                  <ChineseSourceBody text={page.text} />
+                                ) : (
+                                  <p className="cn-text text-sm text-slate-500 dark:text-slate-400">
+                                    此頁未偵測到可選取的文字，翻譯時會改用 OCR。
+                                  </p>
+                                )}
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <article className={`mx-auto w-full ${readingWidthClass} rounded-3xl border border-amber-200/70 bg-white/90 p-7 shadow-sm dark:border-slate-700 dark:bg-slate-900/70`}>
+                          <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            Original Chinese
+                          </p>
+                          <div className="text-slate-800 dark:text-slate-100" style={{ fontSize: `${documentFontSize}px` }}>
+                            <ChineseSourceBody text={pastedText} />
+                          </div>
+                        </article>
+                      )
+                    ) : null}
+
+                    {activeView === "english" ? (
+                      <article className={`mx-auto w-full ${readingWidthClass} rounded-3xl border border-amber-200/70 bg-white/90 p-7 shadow-sm dark:border-slate-700 dark:bg-slate-900/70`}>
+                        <div className="mb-5 flex items-center justify-between gap-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            English Translation
+                          </p>
+                          {isStreaming ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+                              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                              Streaming
+                            </span>
+                          ) : null}
+                        </div>
+                        <div
+                          className="document-text text-slate-800 dark:text-slate-100"
+                          style={{ fontFamily: "var(--font-doc), Georgia, serif", fontSize: `${documentFontSize}px`, lineHeight: 1.9 }}
+                        >
+                          {parsedEnglishText.bodyParagraphs.length > 0 ? (
+                            <StructuredTranslationBody paragraphs={parsedEnglishText.bodyParagraphs} />
+                          ) : null}
+
+                          {showLivePreview && liveText ? (
+                            <p className={parsedEnglishText.bodyParagraphs.length > 0 ? "mt-5 whitespace-pre-wrap" : "whitespace-pre-wrap"}>
+                              {liveText}
+                              <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse bg-amber-500 align-middle" />
+                            </p>
+                          ) : null}
+
+                          {processing && !englishText && !liveText ? (
+                            <div className="space-y-3">
+                              <div className="h-4 w-3/4 animate-pulse rounded bg-amber-100/80 dark:bg-slate-800" />
+                              <div className="h-4 w-full animate-pulse rounded bg-amber-100/80 dark:bg-slate-800" />
+                              <div className="h-4 w-5/6 animate-pulse rounded bg-amber-100/80 dark:bg-slate-800" />
+                              <p className="pt-2 text-sm text-slate-400 dark:text-slate-500">Waiting for the model to respond...</p>
+                            </div>
+                          ) : null}
+
+                          {parsedEnglishText.footnotes.length > 0 ? (
+                            <section className="mt-8 rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4 dark:border-amber-900/80 dark:bg-amber-950/30">
+                              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                                Footnotes
+                              </p>
+                              <ol className="space-y-2">
+                                {parsedEnglishText.footnotes.map((note) => (
+                                  <li
+                                    key={`${note.marker}-${note.content.slice(0, 24)}`}
+                                    className="text-sm leading-8 text-slate-700 dark:text-slate-200"
+                                  >
+                                    <span className="mr-2 font-semibold text-amber-800 dark:text-amber-200">{note.marker}</span>
+                                    <span>{note.content}</span>
+                                  </li>
+                                ))}
+                              </ol>
+                            </section>
+                          ) : null}
+                        </div>
+                      </article>
+                    ) : null}
+
+                    {activeView === "side-by-side" ? (
+                      canShowPdfSideBySide ? (
+                        <PdfSideBySideView
+                          pdfUrl={pdfObjectUrl ?? ""}
+                          totalPages={pdfTotalPages}
+                          extractedPages={pdfPages}
+                          translationPages={translationPages}
+                          scannedMessage={pdfScannedMessage}
+                        />
+                      ) : canShowImageSideBySide ? (
+                        <ImageSideBySideView imageDataUrl={imageDataUrl ?? ""} translatedText={translationPages[0]?.translatedText || ""} />
+                      ) : (
+                        <SideBySideView chunks={translatedChunks} />
+                      )
+                    ) : null}
+                  </>
+                ) : null}
+              </section>
+            ) : (
+              <section className="rounded-[30px] border border-dashed border-amber-300 bg-white/80 p-6 shadow-soft backdrop-blur dark:border-slate-700 dark:bg-slate-900/70">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Build the translation workspace</h3>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  Start with a PDF, scan, or pasted passage. Once a source is loaded, this panel becomes your review
+                  canvas for original text, live translation, and side-by-side comparison.
+                </p>
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/60">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">1. Choose the right input</p>
+                    <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                      PDFs work best for longer documents. Image mode handles scans and screenshots. Text mode is fastest for quick checks.
+                    </p>
+                  </div>
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/60">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">2. Tune terminology</p>
+                    <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                      Set the domain and lock names or technical terms in the glossary before you run the translation.
+                    </p>
+                  </div>
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/60">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">3. Review like an editor</p>
+                    <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                      Compare the original and English output, then export clean HTML, TXT, or PDF once you are satisfied.
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
           </section>
-        ) : (
-          <EmptyState
-            title="Upload a PDF, upload an image, or paste Chinese text to begin."
-            description="After translation, you can switch views, copy the English output, and export HTML, TXT, or PDF."
-          />
-        )}
+        </div>
       </div>
 
       <ApiKeySettings
