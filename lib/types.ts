@@ -45,4 +45,5 @@ export type TranslateImageTask = {
   id: string;
   pageNumber: number;
   imageDataUrl: string;
+  mode?: "ocr" | "translate";
 };

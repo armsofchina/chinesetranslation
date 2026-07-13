@@ -58,12 +58,14 @@ export const withSmartRetry = async <T extends { text: string }>(
     baseDelayMs?: number;
     maxDelayMs?: number;
     temperatureBump?: number;
+    validateEnglish?: boolean;
   } = {}
 ): Promise<T> => {
   const maxRetries = options.maxRetries ?? 3;
   const baseDelayMs = options.baseDelayMs ?? 1500;
   const maxDelayMs = options.maxDelayMs ?? 10000;
   const temperatureBump = options.temperatureBump ?? 0.1;
+  const validateEnglish = options.validateEnglish ?? true;
 
   let lastError: Error | null = null;
 
@@ -84,7 +86,7 @@ export const withSmartRetry = async <T extends { text: string }>(
       }
 
       // Validate: reasonably English (not hallucinated in Chinese).
-      if (!isReasonablyEnglish(result.text)) {
+      if (validateEnglish && !isReasonablyEnglish(result.text)) {
         if (attempt < maxRetries) {
           lastError = new Error("Translation appears to be non-English. Retrying...");
           await sleep(Math.min(baseDelayMs * (attempt + 1), maxDelayMs));

@@ -1,5 +1,10 @@
 import { normalizeTranslationFootnotes } from "@/lib/footnotes";
-import { buildTranslationMessages, buildVisionTranslationMessages, TranslationDomain } from "@/lib/prompts";
+import {
+  buildTranslationMessages,
+  buildVisionOcrMessages,
+  buildVisionTranslationMessages,
+  TranslationDomain
+} from "@/lib/prompts";
 
 const PPQ_URL = process.env.PPQ_CHAT_COMPLETIONS_URL || "https://api.ppq.ai/chat/completions";
 
@@ -21,6 +26,7 @@ type TranslateChunkInput = {
   domain?: TranslationDomain;
   previousSummary?: string;
   glossary?: Record<string, string>;
+  temperature?: number;
 };
 
 type TranslateImageInput = {
@@ -30,6 +36,7 @@ type TranslateImageInput = {
   domain?: TranslationDomain;
   previousSummary?: string;
   glossary?: Record<string, string>;
+  temperature?: number;
 };
 
 const extractContentText = (content: unknown): string => {
@@ -152,14 +159,15 @@ export const streamTranslateWithPpq = async ({
   text,
   domain = "general",
   previousSummary,
-  glossary
+  glossary,
+  temperature = 0.2
 }: TranslateChunkInput): Promise<AsyncGenerator<string, void, unknown>> => {
   const messages = buildTranslationMessages({ text, domain, previousSummary, glossary });
 
   const response = await requestPpqStream(apiKey, {
     model,
     messages,
-    temperature: 0.2
+    temperature
   });
 
   return streamPpqDeltas(response);
@@ -171,7 +179,8 @@ export const streamTranslateImageWithPpq = async ({
   imageDataUrl,
   domain = "general",
   previousSummary,
-  glossary
+  glossary,
+  temperature = 0.1
 }: TranslateImageInput): Promise<AsyncGenerator<string, void, unknown>> => {
   const messages = buildVisionTranslationMessages({
     text: "",
@@ -184,7 +193,22 @@ export const streamTranslateImageWithPpq = async ({
   const response = await requestPpqStream(apiKey, {
     model,
     messages,
-    temperature: 0.1
+    temperature
+  });
+
+  return streamPpqDeltas(response);
+};
+
+export const streamOcrImageWithPpq = async ({
+  apiKey,
+  model,
+  imageDataUrl,
+  temperature = 0
+}: TranslateImageInput): Promise<AsyncGenerator<string, void, unknown>> => {
+  const response = await requestPpqStream(apiKey, {
+    model,
+    messages: buildVisionOcrMessages(imageDataUrl),
+    temperature
   });
 
   return streamPpqDeltas(response);

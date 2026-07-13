@@ -17,11 +17,21 @@ type StreamPayloadBase = {
   domain?: TranslationDomain;
   previousSummary?: string;
   glossary?: Record<string, string>;
+  temperature?: number;
 };
 
 type StreamPayload =
   | ({ chunk: TranslationChunk } & StreamPayloadBase)
   | ({ imageTask: TranslateImageTask } & StreamPayloadBase);
+
+export class TranslationStreamError extends Error {
+  status: number;
+
+  constructor(message: string, status = 0) {
+    super(message);
+    this.status = status;
+  }
+}
 
 /**
  * Calls the streaming translation endpoint and invokes `onDelta` for every
@@ -41,7 +51,7 @@ export const streamTranslation = async (
 
   if (!response.ok || !response.body) {
     const errorPayload = await response.json().catch(() => null);
-    throw new Error(errorPayload?.error || "Translation request failed.");
+    throw new TranslationStreamError(errorPayload?.error || "Translation request failed.", response.status);
   }
 
   const reader = response.body.getReader();
@@ -50,6 +60,7 @@ export const streamTranslation = async (
   let finalText = "";
   let model = "";
   let errorMessage = "";
+  let errorStatus = 0;
 
   const processEvent = (rawEvent: string) => {
     const lines = rawEvent.split("\n");
@@ -87,6 +98,7 @@ export const streamTranslation = async (
       model = data.model || model;
     } else if (eventName === "error") {
       errorMessage = data.error || "Translation API failed.";
+      errorStatus = typeof data.status === "number" ? data.status : 0;
     }
   };
 
@@ -112,7 +124,7 @@ export const streamTranslation = async (
   }
 
   if (errorMessage) {
-    throw new Error(errorMessage);
+    throw new TranslationStreamError(errorMessage, errorStatus);
   }
 
   return { text: finalText, model };

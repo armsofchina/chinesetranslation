@@ -5,7 +5,7 @@ const ensureWorker = async () => {
     return;
   }
   const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+  pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
   workerConfigured = true;
 };
 
@@ -41,7 +41,7 @@ export const renderPdfPagesToJpegDataUrls = async (file: File, pageNumbers: numb
   for (const pageNumber of uniquePageNumbers) {
     const page = await pdfDoc.getPage(pageNumber);
     const baseViewport = page.getViewport({ scale: 1 });
-    const targetWidth = clampMaxWidth(baseViewport.width, 1600);
+    const targetWidth = clampMaxWidth(baseViewport.width, 2000);
     const renderScale = targetWidth / baseViewport.width;
     const viewport = page.getViewport({ scale: renderScale });
 
@@ -54,7 +54,7 @@ export const renderPdfPagesToJpegDataUrls = async (file: File, pageNumbers: numb
     }
 
     await page.render({ canvasContext: context, viewport }).promise;
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
+    const dataUrl = canvas.toDataURL("image/png");
     result.set(pageNumber, dataUrl);
   }
 

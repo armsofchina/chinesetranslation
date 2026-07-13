@@ -168,3 +168,21 @@ export const buildVisionTranslationMessages = (input: TranslationContextInput): 
     }
   ];
 };
+
+export const buildVisionOcrMessages = (imageDataUrl: string): Array<{ role: "system" | "user"; content: unknown }> => [
+  {
+    role: "system",
+    content:
+      "You are a Chinese OCR transcription specialist. Transcribe every readable source character exactly as shown. Preserve headings, paragraph breaks, lists, tables, dates, punctuation, and reading order. Do not translate, explain, summarize, or correct the source. Output only the transcription."
+  },
+  {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: "Transcribe all readable Chinese text in this image. Preserve layout with plain text or markdown tables when needed."
+      },
+      { type: "image_url", image_url: { url: imageDataUrl } }
+    ]
+  }
+];

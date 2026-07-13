@@ -2,11 +2,13 @@ import { NextRequest } from "next/server";
 import {
   DEFAULT_MODEL,
   PpqRequestError,
+  streamOcrImageWithPpq,
   streamTranslateImageWithPpq,
   streamTranslateWithPpq
 } from "@/lib/ppq";
 import { normalizeTranslationFootnotes } from "@/lib/footnotes";
 import { TranslationDomain } from "@/lib/prompts";
+import { checkRateLimit, getRequestClientKey } from "@/lib/rateLimit";
 import { TranslateImageTask, TranslationChunk } from "@/lib/types";
 
 type StreamRequestBody = {
@@ -19,6 +21,7 @@ type StreamRequestBody = {
   domain?: TranslationDomain;
   previousSummary?: string;
   glossary?: Record<string, string>;
+  temperature?: number;
 };
 
 export const runtime = "nodejs";
@@ -46,6 +49,20 @@ const sseEvent = (event: string, data: unknown): string =>
   `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
 export async function POST(request: NextRequest) {
+  const rateLimit = checkRateLimit(`translate:${getRequestClientKey(request.headers)}`, {
+    limit: 120,
+    windowMs: 60_000
+  });
+  if (!rateLimit.allowed) {
+    return new Response(JSON.stringify({ error: "Too many translation requests. Please wait and try again." }), {
+      status: 429,
+      headers: {
+        "Content-Type": "application/json",
+        "Retry-After": String(rateLimit.retryAfterSeconds)
+      }
+    });
+  }
+
   const body = (await request.json().catch(() => null)) as StreamRequestBody | null;
 
   const chunk = body?.chunk;
@@ -54,6 +71,27 @@ export async function POST(request: NextRequest) {
   if (!chunk && !imageTask) {
     return new Response(JSON.stringify({ error: "No text or image input provided." }), {
       status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  if (chunk?.originalChinese && chunk.originalChinese.length > 20_000) {
+    return new Response(JSON.stringify({ error: "This translation segment is too large." }), {
+      status: 413,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  if (imageTask?.imageDataUrl && imageTask.imageDataUrl.length > 22_000_000) {
+    return new Response(JSON.stringify({ error: "This OCR image is too large." }), {
+      status: 413,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  if (body?.glossary && Object.keys(body.glossary).length > 500) {
+    return new Response(JSON.stringify({ error: "The glossary is too large for one request." }), {
+      status: 413,
       headers: { "Content-Type": "application/json" }
     });
   }
@@ -80,6 +118,7 @@ export async function POST(request: NextRequest) {
   const domain = body?.domain || "general";
   const previousSummary = body?.previousSummary;
   const glossary = body?.glossary;
+  const temperature = typeof body?.temperature === "number" ? Math.max(0, Math.min(body.temperature, 1)) : undefined;
 
   const encoder = new TextEncoder();
 
@@ -92,13 +131,21 @@ export async function POST(request: NextRequest) {
       try {
         const usedModel = imageTask ? imageModel : model;
         const deltas = imageTask
-          ? await streamTranslateImageWithPpq({
+          ? imageTask.mode === "ocr"
+            ? await streamOcrImageWithPpq({
+                apiKey: selectedApiKey,
+                model: imageModel,
+                imageDataUrl: imageTask.imageDataUrl,
+                temperature
+              })
+            : await streamTranslateImageWithPpq({
               apiKey: selectedApiKey,
               model: imageModel,
               imageDataUrl: imageTask.imageDataUrl,
               domain,
               previousSummary,
-              glossary
+              glossary,
+              temperature
             })
           : await streamTranslateWithPpq({
               apiKey: selectedApiKey,
@@ -106,7 +153,8 @@ export async function POST(request: NextRequest) {
               text: chunk!.originalChinese,
               domain,
               previousSummary,
-              glossary
+              glossary,
+              temperature
             });
 
         let full = "";
@@ -124,7 +172,10 @@ export async function POST(request: NextRequest) {
           error instanceof PpqRequestError
             ? toUserFriendlyError(error.status, error.message)
             : "Translation API failed.";
-        send("error", { error: message });
+        send("error", {
+          error: message,
+          status: error instanceof PpqRequestError ? error.status : 500
+        });
       } finally {
         controller.close();
       }

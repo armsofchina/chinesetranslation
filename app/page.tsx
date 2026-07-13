@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ApiKeySettings from "@/components/ApiKeySettings";
 import AppHeader from "@/components/AppHeader";
 import ChineseSourceBody from "@/components/ChineseSourceBody";
@@ -19,6 +19,8 @@ import StructuredTranslationBody from "@/components/StructuredTranslationBody";
 import TextInputPanel from "@/components/TextInputPanel";
 import Toast from "@/components/Toast";
 import TranslationTabs, { TranslationView } from "@/components/TranslationTabs";
+import TranslationEditor from "@/components/TranslationEditor";
+import TranslationQualityPanel from "@/components/TranslationQualityPanel";
 import { downloadBilingualHtml } from "@/lib/exportHtml";
 import { downloadEnglishPdf } from "@/lib/exportPdf";
 import { downloadTxt } from "@/lib/exportTxt";
@@ -26,7 +28,13 @@ import { ExtractedEntity, extractEntitiesHeuristic } from "@/lib/extractEntities
 import { normalizeTranslationFootnotes, parseTranslationText } from "@/lib/footnotes";
 import { fileToDataUrl, hasSelectableTextInPdfPage, renderPdfPagesToJpegDataUrls } from "@/lib/imageOcr";
 import { extractSelectableTextFromPdf } from "@/lib/pdfExtract";
+import {
+  clearWorkspaceSnapshot,
+  loadWorkspaceSnapshot,
+  saveWorkspaceSnapshot
+} from "@/lib/projectStore";
 import { DOMAINS, TranslationDomain } from "@/lib/prompts";
+import { inspectTranslationQuality } from "@/lib/qualityChecks";
 import { withSmartRetry } from "@/lib/smartRetry";
 import { streamTranslation } from "@/lib/streamClient";
 import {
@@ -40,19 +48,16 @@ import { ExtractedPdfPage, ThemePreference, TranslationChunk, TranslationPage } 
 
 const USER_API_KEY_STORAGE = "translator-user-ppq-key";
 const LEGACY_USER_API_KEY_STORAGE = "translator-user-openrouter-key";
+const MAX_PDF_BYTES = 50 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const MAX_PDF_PAGES = 250;
 
 const SCANNED_MESSAGE =
   "This PDF appears image-based. The workspace can translate scanned pages with OCR, but names, seals, and dense tables may still need manual review.";
 
-/** Builds a rolling context summary from the end of the translated text. */
-const makeRollingSummary = (text: string, maxLen = 180): string => {
-  if (!text) return "";
-  const trimmed = text.trim();
-  if (trimmed.length <= maxLen) return trimmed;
-  const slice = trimmed.slice(-maxLen);
-  // Try to start at a sentence boundary.
-  const sentenceBreak = slice.search(/[.!?。！？]\s+/);
-  return sentenceBreak > 10 ? slice.slice(sentenceBreak + 1).trim() : slice.trim();
+const makeRollingContext = (source: string, translation: string, maxLen = 800): string => {
+  const combined = `Previous source:\n${source.trim()}\n\nPrevious translation:\n${translation.trim()}`;
+  return combined.length <= maxLen ? combined : combined.slice(-maxLen);
 };
 
 export default function HomePage() {
@@ -83,6 +88,12 @@ export default function HomePage() {
   const [progressStep, setProgressStep] = useState<ProgressStep>("idle");
   const [documentFontSize, setDocumentFontSize] = useState(16);
   const [readingWidth, setReadingWidth] = useState<"focused" | "wide">("focused");
+  const [sourcePanelOpen, setSourcePanelOpen] = useState(true);
+  const [reviewMode, setReviewMode] = useState(false);
+  const [approvedChunkIds, setApprovedChunkIds] = useState<string[]>([]);
+  const [translationStale, setTranslationStale] = useState(false);
+  const [canResume, setCanResume] = useState(false);
+  const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
 
   // Streaming / live progress state.
   const [liveText, setLiveText] = useState("");
@@ -95,10 +106,12 @@ export default function HomePage() {
   const [glossaryEntries, setGlossaryEntries] = useState<GlossaryEntry[]>([]);
   const [extractedEntities, setExtractedEntities] = useState<ExtractedEntity[]>([]);
   const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
-  const [previousSummary, setPreviousSummary] = useState("");
 
   const [toastMessage, setToastMessage] = useState("");
   const [toastVisible, setToastVisible] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const resultsRef = useRef<HTMLElement | null>(null);
+  const editHistoryRef = useRef<TranslationChunk[][]>([]);
 
   useEffect(() => {
     const savedTheme = getSavedThemePreference();
@@ -114,6 +127,51 @@ export default function HomePage() {
       window.localStorage.setItem(USER_API_KEY_STORAGE, savedKey);
       window.localStorage.removeItem(LEGACY_USER_API_KEY_STORAGE);
     }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    loadWorkspaceSnapshot()
+      .then((snapshot) => {
+        if (!active || !snapshot || snapshot.version !== 1) {
+          return;
+        }
+        setInputMode(snapshot.inputMode);
+        setPdfName(snapshot.pdfName);
+        setPdfFile(snapshot.pdfFile);
+        setPdfPages(snapshot.pdfPages);
+        setPdfTotalPages(snapshot.pdfTotalPages);
+        setPdfScannedMessage(snapshot.pdfScannedMessage);
+        if (snapshot.pdfFile) {
+          setPdfObjectUrl(URL.createObjectURL(snapshot.pdfFile));
+        }
+        setImageName(snapshot.imageName);
+        setImageDataUrl(snapshot.imageDataUrl);
+        setPastedText(snapshot.pastedText);
+        setTranslatedChunks(snapshot.translatedChunks);
+        setTranslationPages(snapshot.translationPages);
+        setDomain(snapshot.domain);
+        setGlossaryEntries(snapshot.glossaryEntries);
+        setExtractedEntities(snapshot.extractedEntities);
+        setUsedModel(snapshot.usedModel);
+        setApprovedChunkIds(snapshot.approvedChunkIds);
+        setTranslationStale(snapshot.translationStale);
+        setCanResume(snapshot.canResume);
+        setSourcePanelOpen(!snapshot.pdfTotalPages && !snapshot.imageDataUrl && !snapshot.pastedText.trim());
+        if (snapshot.translatedChunks.length > 0) {
+          setActiveView("english");
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) {
+          setWorkspaceHydrated(true);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -259,6 +317,153 @@ export default function HomePage() {
     return record;
   }, [glossaryEntries]);
 
+  const qualityIssues = useMemo(
+    () => inspectTranslationQuality(translatedChunks, lockedGlossary),
+    [lockedGlossary, translatedChunks]
+  );
+
+  useEffect(() => {
+    if (!workspaceHydrated) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      saveWorkspaceSnapshot({
+        version: 1,
+        savedAt: Date.now(),
+        inputMode,
+        pdfName,
+        pdfFile,
+        pdfPages,
+        pdfTotalPages,
+        pdfScannedMessage,
+        imageName,
+        imageDataUrl,
+        pastedText,
+        translatedChunks,
+        translationPages,
+        domain,
+        glossaryEntries,
+        extractedEntities,
+        usedModel,
+        approvedChunkIds,
+        translationStale,
+        canResume
+      }).catch(() => undefined);
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [
+    approvedChunkIds,
+    canResume,
+    domain,
+    extractedEntities,
+    glossaryEntries,
+    imageDataUrl,
+    imageName,
+    inputMode,
+    pastedText,
+    pdfFile,
+    pdfName,
+    pdfPages,
+    pdfScannedMessage,
+    pdfTotalPages,
+    translatedChunks,
+    translationPages,
+    translationStale,
+    usedModel,
+    workspaceHydrated
+  ]);
+
+  useEffect(() => {
+    if (processing && typeof window !== "undefined" && window.innerWidth < 1280) {
+      window.setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    }
+  }, [processing]);
+
+  const markTranslationStale = () => {
+    if (hasTranslation) {
+      setTranslationStale(true);
+      setCanResume(false);
+      setApprovedChunkIds([]);
+    }
+  };
+
+  const handleInputModeChange = (mode: InputMode) => {
+    if (mode === inputMode) {
+      return;
+    }
+    setInputMode(mode);
+    setTranslatedChunks([]);
+    setTranslationPages([]);
+    setApprovedChunkIds([]);
+    setTranslationStale(false);
+    setCanResume(false);
+    setErrorMessage("");
+    setSourcePanelOpen(true);
+    setActiveView("original");
+    setReviewMode(false);
+  };
+
+  const handlePastedTextChange = (value: string) => {
+    setPastedText(value);
+    markTranslationStale();
+  };
+
+  const handleDomainChange = (value: TranslationDomain) => {
+    setDomain(value);
+    markTranslationStale();
+  };
+
+  const handleGlossaryEntriesChange = (entries: GlossaryEntry[]) => {
+    setGlossaryEntries(entries);
+    markTranslationStale();
+  };
+
+  const commitTranslationEdit = (chunkId: string, translatedEnglish: string) => {
+    editHistoryRef.current.push(translatedChunks);
+    const nextChunks = translatedChunks.map((chunk) =>
+      chunk.id === chunkId ? { ...chunk, translatedEnglish } : chunk
+    );
+    setTranslatedChunks(nextChunks);
+    setTranslationPages((pages) =>
+      pages.map((page) => {
+        const nextPageChunks = page.chunks.map((chunk) =>
+          chunk.id === chunkId ? { ...chunk, translatedEnglish } : chunk
+        );
+        return {
+          ...page,
+          chunks: nextPageChunks,
+          translatedText: normalizeTranslationFootnotes(joinEnglishTranslation(nextPageChunks))
+        };
+      })
+    );
+    setApprovedChunkIds((ids) => ids.filter((id) => id !== chunkId));
+  };
+
+  const undoTranslationEdit = () => {
+    const previous = editHistoryRef.current.pop();
+    if (!previous) {
+      return;
+    }
+    setTranslatedChunks(previous);
+    setTranslationPages((pages) =>
+      pages.map((page) => {
+        const previousById = new Map(previous.map((chunk) => [chunk.id, chunk]));
+        const nextPageChunks = page.chunks.map((chunk) => previousById.get(chunk.id) ?? chunk);
+        return {
+          ...page,
+          chunks: nextPageChunks,
+          translatedText: normalizeTranslationFootnotes(joinEnglishTranslation(nextPageChunks))
+        };
+      })
+    );
+  };
+
+  const toggleChunkApproved = (chunkId: string) => {
+    setApprovedChunkIds((ids) =>
+      ids.includes(chunkId) ? ids.filter((id) => id !== chunkId) : [...ids, chunkId]
+    );
+  };
+
   const showToast = (message: string) => {
     setToastMessage(message);
     setToastVisible(true);
@@ -308,6 +513,12 @@ export default function HomePage() {
       return;
     }
 
+    if (file.size > MAX_PDF_BYTES) {
+      setErrorMessage("PDFs must be 50 MB or smaller.");
+      resetPdfState();
+      return;
+    }
+
     setInputMode("pdf");
     setActiveView("original");
     resetImageState();
@@ -328,10 +539,22 @@ export default function HomePage() {
       return;
     }
 
+    if (result.totalPages > MAX_PDF_PAGES) {
+      resetPdfState();
+      setStatusMessage("");
+      setProgressStep("idle");
+      setErrorMessage(`PDFs are limited to ${MAX_PDF_PAGES} pages per workspace.`);
+      return;
+    }
+
     setPdfPages(result.pages);
     setPdfTotalPages(result.totalPages);
     setStatusMessage("");
     setProgressStep("idle");
+    setApprovedChunkIds([]);
+    setTranslationStale(false);
+    setCanResume(false);
+    setSourcePanelOpen(false);
 
     if (result.kind === "scanned") {
       setPdfScannedMessage(SCANNED_MESSAGE);
@@ -364,6 +587,12 @@ export default function HomePage() {
       return;
     }
 
+    if (file.size > MAX_IMAGE_BYTES) {
+      setErrorMessage("Images must be 15 MB or smaller.");
+      resetImageState();
+      return;
+    }
+
     setInputMode("image");
     setActiveView("original");
     resetPdfState();
@@ -372,6 +601,10 @@ export default function HomePage() {
     try {
       const dataUrl = await fileToDataUrl(file);
       setImageDataUrl(dataUrl);
+      setApprovedChunkIds([]);
+      setTranslationStale(false);
+      setCanResume(false);
+      setSourcePanelOpen(false);
     } catch {
       setErrorMessage("Unable to load this image.");
       resetImageState();
@@ -443,16 +676,69 @@ export default function HomePage() {
     }
   };
 
-  const handleTranslatePdfPageByPage = async () => {
+  const streamChunkWithRetry = (chunk: TranslationChunk, rollingContext: string) =>
+    withSmartRetry(
+      async (_attempt, temperature) => {
+        setLiveText("");
+        return streamTranslation(
+          {
+            chunk,
+            userPpqApiKey: activeUserApiKey || undefined,
+            domain,
+            previousSummary: rollingContext || undefined,
+            glossary: lockedGlossary,
+            temperature
+          },
+          {
+            onDelta: (delta) => setLiveText((prev) => prev + delta),
+            signal: abortControllerRef.current?.signal
+          }
+        );
+      },
+      { maxRetries: 2 }
+    );
+
+  const transcribeImageWithRetry = (imageTask: { id: string; pageNumber: number; imageDataUrl: string }) =>
+    withSmartRetry(
+      async (attempt) => {
+        setLiveText("");
+        return streamTranslation(
+          {
+            imageTask: { ...imageTask, mode: "ocr" },
+            userPpqApiKey: activeUserApiKey || undefined,
+            temperature: Math.min(0.1, attempt * 0.05)
+          },
+          {
+            onDelta: (delta) => setLiveText((prev) => prev + delta),
+            signal: abortControllerRef.current?.signal
+          }
+        );
+      },
+      { maxRetries: 2, validateEnglish: false }
+    );
+
+  const handleTranslatePdfPageByPage = async (resume: boolean) => {
     const pagesToTranslate = pdfPages;
-    const completedChunks: TranslationChunk[] = [];
-    const completedPages: TranslationPage[] = [];
+    const completedChunks: TranslationChunk[] = resume ? translatedChunks.filter((chunk) => chunk.translatedEnglish.trim()) : [];
+    const completedPages: TranslationPage[] = resume
+      ? translationPages.filter((page) => page.translatedText.trim())
+      : [];
+    const savedOcrText = new Map(
+      translationPages
+        .filter((page) => page.originalText.trim() && page.originalText !== "[Image-based source text]")
+        .map((page) => [page.pageNumber, page.originalText])
+    );
+    const completedPageNumbers = new Set(completedPages.map((page) => page.pageNumber));
+    const lastCompletedChunk = completedChunks[completedChunks.length - 1];
+    let rollingContext = lastCompletedChunk
+      ? makeRollingContext(lastCompletedChunk.originalChinese, lastCompletedChunk.translatedEnglish)
+      : "";
     const pagesNeedingOcr = pagesToTranslate
-      .filter((page) => !hasSelectableTextInPdfPage(page.text))
+      .filter((page) => !hasSelectableTextInPdfPage(page.text) && !completedPageNumbers.has(page.pageNumber))
       .map((page) => page.pageNumber);
 
     setTotalUnits(pagesToTranslate.length);
-    setCompletedUnits(0);
+    setCompletedUnits(completedPages.length);
 
     let ocrImageMap = new Map<number, string>();
     if (pagesNeedingOcr.length > 0) {
@@ -465,6 +751,9 @@ export default function HomePage() {
 
     for (let index = 0; index < pagesToTranslate.length; index += 1) {
       const page = pagesToTranslate[index];
+      if (completedPageNumbers.has(page.pageNumber)) {
+        continue;
+      }
       const pageChunks = createChunksFromSinglePdfPage(page);
       const isOcrPage = pageChunks.length === 0;
 
@@ -475,38 +764,37 @@ export default function HomePage() {
       setIsStreaming(true);
 
       if (isOcrPage) {
-        const imageDataUrl = ocrImageMap.get(page.pageNumber);
-        if (!imageDataUrl) {
-          const emptyPage: TranslationPage = {
+        let ocrText = savedOcrText.get(page.pageNumber) || "";
+        if (!ocrText) {
+          const imageDataUrl = ocrImageMap.get(page.pageNumber);
+          if (!imageDataUrl) {
+            throw new Error(`Unable to prepare OCR image for page ${page.pageNumber}.`);
+          }
+          setStatusMessage(`Transcribing page ${page.pageNumber} of ${pdfTotalPages}...`);
+          const ocrResult = await transcribeImageWithRetry({
+            id: `pdf-ocr-p${page.pageNumber}`,
             pageNumber: page.pageNumber,
-            originalText: page.text,
-            translatedText: "",
-            chunks: []
-          };
-          completedPages.push(emptyPage);
-          setTranslationPages([...completedPages]);
-          setCompletedUnits(index + 1);
-          continue;
+            imageDataUrl
+          });
+          ocrText = ocrResult.text.trim();
+          if (!ocrText) {
+            throw new Error(`No readable text was found on page ${page.pageNumber}.`);
+          }
+          savedOcrText.set(page.pageNumber, ocrText);
+          setTranslationPages((pages) => [
+            ...pages.filter((entry) => entry.pageNumber !== page.pageNumber),
+            { pageNumber: page.pageNumber, originalText: ocrText, translatedText: "", chunks: [] }
+          ].sort((left, right) => left.pageNumber - right.pageNumber));
         }
 
-        const { text, model } = await withSmartRetry(
-          async () =>
-            streamTranslation(
-              {
-                imageTask: {
-                  id: `pdf-ocr-p${page.pageNumber}`,
-                  pageNumber: page.pageNumber,
-                  imageDataUrl
-                },
-                userPpqApiKey: activeUserApiKey || undefined,
-                domain,
-                previousSummary: previousSummary || undefined,
-                glossary: lockedGlossary
-              },
-              { onDelta: (delta) => setLiveText((prev) => prev + delta) }
-            ),
-          { maxRetries: 2 }
-        );
+        setStatusMessage(`Translating page ${page.pageNumber} of ${pdfTotalPages}...`);
+        const sourceChunk: TranslationChunk = {
+          id: `pdf-ocr-p${page.pageNumber}`,
+          pageNumber: page.pageNumber,
+          originalChinese: ocrText,
+          translatedEnglish: ""
+        };
+        const { text, model } = await streamChunkWithRetry(sourceChunk, rollingContext);
 
         if (!text.trim()) {
           throw new Error(`Empty OCR translation output returned for page ${page.pageNumber}.`);
@@ -515,12 +803,12 @@ export default function HomePage() {
         const ocrChunk: TranslationChunk = {
           id: `pdf-ocr-p${page.pageNumber}`,
           pageNumber: page.pageNumber,
-          originalChinese: "[Image-based source text]",
+          originalChinese: ocrText,
           translatedEnglish: text
         };
         const pageResult: TranslationPage = {
           pageNumber: page.pageNumber,
-          originalText: page.text,
+          originalText: ocrText,
           translatedText: text,
           chunks: [ocrChunk]
         };
@@ -530,8 +818,8 @@ export default function HomePage() {
         setTranslationPages([...completedPages]);
         setTranslatedChunks([...completedChunks]);
         if (model) setUsedModel(model);
-        setCompletedUnits(index + 1);
-        setPreviousSummary(makeRollingSummary(text));
+        setCompletedUnits(completedPages.length);
+        rollingContext = makeRollingContext(ocrText, text);
         continue;
       }
 
@@ -540,20 +828,7 @@ export default function HomePage() {
       let pageModel = "";
 
       for (const pageChunk of pageChunks) {
-        const { text, model } = await withSmartRetry(
-          async () =>
-            streamTranslation(
-              {
-                chunk: pageChunk,
-                userPpqApiKey: activeUserApiKey || undefined,
-                domain,
-                previousSummary: previousSummary || undefined,
-                glossary: lockedGlossary
-              },
-              { onDelta: (delta) => setLiveText((prev) => prev + delta) }
-            ),
-          { maxRetries: 2 }
-        );
+        const { text, model } = await streamChunkWithRetry(pageChunk, rollingContext);
 
         if (!text.trim()) {
           throw new Error(`Empty translation output returned for page ${page.pageNumber}.`);
@@ -561,7 +836,7 @@ export default function HomePage() {
 
         translatedPageChunks.push({ ...pageChunk, translatedEnglish: text });
         if (model) pageModel = model;
-        setPreviousSummary(makeRollingSummary(text));
+        rollingContext = makeRollingContext(pageChunk.originalChinese, text);
       }
 
       const translatedText = normalizeTranslationFootnotes(joinEnglishTranslation(translatedPageChunks));
@@ -577,38 +852,42 @@ export default function HomePage() {
       setTranslationPages([...completedPages]);
       setTranslatedChunks([...completedChunks]);
       if (pageModel) setUsedModel(pageModel);
-      setCompletedUnits(index + 1);
+      setCompletedUnits(completedPages.length);
     }
 
     setIsStreaming(false);
     setLiveText("");
   };
 
-  const handleTranslateImage = async () => {
+  const handleTranslateImage = async (resume: boolean) => {
     if (!imageDataUrl) {
       throw new Error("Upload an image to begin translation.");
     }
 
     setTotalUnits(1);
-    setCompletedUnits(0);
-    setStatusMessage("Running OCR translation for image...");
+    setCompletedUnits(resume && translatedChunks[0]?.translatedEnglish.trim() ? 1 : 0);
+    setStatusMessage("Transcribing image...");
     setLiveText("");
     setIsStreaming(true);
 
-    const { text, model } = await withSmartRetry(
-      async () =>
-        streamTranslation(
-          {
-            imageTask: { id: "image-ocr-1", pageNumber: 1, imageDataUrl },
-            userPpqApiKey: activeUserApiKey || undefined,
-            domain,
-            previousSummary: previousSummary || undefined,
-            glossary: lockedGlossary
-          },
-          { onDelta: (delta) => setLiveText((prev) => prev + delta) }
-        ),
-      { maxRetries: 2 }
-    );
+    let ocrText = translationPages[0]?.originalText || "";
+    if (!ocrText || ocrText === "[Image-based source text]") {
+      const ocrResult = await transcribeImageWithRetry({ id: "image-ocr-1", pageNumber: 1, imageDataUrl });
+      ocrText = ocrResult.text.trim();
+      if (!ocrText) {
+        throw new Error("No readable text was found in this image.");
+      }
+      setTranslationPages([{ pageNumber: 1, originalText: ocrText, translatedText: "", chunks: [] }]);
+    }
+
+    setStatusMessage("Translating image text...");
+    const sourceChunk: TranslationChunk = {
+      id: "image-ocr-1",
+      pageNumber: 1,
+      originalChinese: ocrText,
+      translatedEnglish: ""
+    };
+    const { text, model } = await streamChunkWithRetry(sourceChunk, "");
 
     if (!text.trim()) {
       throw new Error("Empty image translation result.");
@@ -617,14 +896,14 @@ export default function HomePage() {
     const normalizedChunk: TranslationChunk = {
       id: "image-ocr-1",
       pageNumber: 1,
-      originalChinese: "[Image-based source text]",
+      originalChinese: ocrText,
       translatedEnglish: text
     };
     setTranslatedChunks([normalizedChunk]);
     setTranslationPages([
       {
         pageNumber: 1,
-        originalText: "[Image-based source text]",
+        originalText: ocrText,
         translatedText: text,
         chunks: [normalizedChunk]
       }
@@ -633,10 +912,10 @@ export default function HomePage() {
     setCompletedUnits(1);
     setIsStreaming(false);
     setLiveText("");
-    setPreviousSummary(makeRollingSummary(text));
   };
 
   const handleTranslate = async () => {
+    const resume = canResume && !translationStale;
     setErrorMessage("");
 
     if (inputMode === "pdf" && pdfTotalPages === 0) {
@@ -653,8 +932,13 @@ export default function HomePage() {
     }
 
     setProcessing(true);
-    setTranslatedChunks([]);
-    setTranslationPages([]);
+    setCanResume(false);
+    if (!resume) {
+      setTranslatedChunks([]);
+      setTranslationPages([]);
+      setApprovedChunkIds([]);
+      editHistoryRef.current = [];
+    }
     setLiveText("");
     setIsStreaming(false);
     setCompletedUnits(0);
@@ -662,7 +946,7 @@ export default function HomePage() {
     setActiveView("english");
     setProgressStep("preparing");
     setStatusMessage("Preparing chunks & glossary...");
-    setPreviousSummary("");
+    abortControllerRef.current = new AbortController();
 
     await new Promise((resolve) => setTimeout(resolve, 120));
 
@@ -678,44 +962,48 @@ export default function HomePage() {
       setProgressStep("translating");
 
       if (inputMode === "pdf") {
-        await handleTranslatePdfPageByPage();
+        await handleTranslatePdfPageByPage(resume);
       } else if (inputMode === "image") {
-        await handleTranslateImage();
+        await handleTranslateImage(resume);
       } else {
-        const completedChunks: TranslationChunk[] = [];
+        const completedById = new Map(
+          (resume ? translatedChunks : [])
+            .filter((chunk) => chunk.translatedEnglish.trim())
+            .map((chunk) => [chunk.id, chunk])
+        );
+        const completedChunks = sourceChunks
+          .map((chunk) => completedById.get(chunk.id))
+          .filter((chunk): chunk is TranslationChunk => Boolean(chunk));
+        const lastCompletedChunk = completedChunks[completedChunks.length - 1];
+        let rollingContext = lastCompletedChunk
+          ? makeRollingContext(lastCompletedChunk.originalChinese, lastCompletedChunk.translatedEnglish)
+          : "";
         setTotalUnits(sourceChunks.length);
-        setCompletedUnits(0);
+        setCompletedUnits(completedChunks.length);
 
         for (let index = 0; index < sourceChunks.length; index += 1) {
           const chunk = sourceChunks[index];
+          if (completedById.has(chunk.id)) {
+            continue;
+          }
           setStatusMessage(`Translating section ${index + 1} of ${sourceChunks.length}...`);
           setLiveText("");
           setIsStreaming(true);
 
-          const { text, model } = await withSmartRetry(
-            async () =>
-              streamTranslation(
-                {
-                  chunk,
-                  userPpqApiKey: activeUserApiKey || undefined,
-                  domain,
-                  previousSummary: previousSummary || undefined,
-                  glossary: lockedGlossary
-                },
-                { onDelta: (delta) => setLiveText((prev) => prev + delta) }
-              ),
-            { maxRetries: 2 }
-          );
+          const { text, model } = await streamChunkWithRetry(chunk, rollingContext);
 
           if (!text.trim()) {
             throw new Error("Empty translation result.");
           }
 
-          completedChunks.push({ ...chunk, translatedEnglish: text });
-          setTranslatedChunks([...completedChunks]);
+          completedById.set(chunk.id, { ...chunk, translatedEnglish: text });
+          const nextCompleted = sourceChunks
+            .map((sourceChunk) => completedById.get(sourceChunk.id))
+            .filter((entry): entry is TranslationChunk => Boolean(entry));
+          setTranslatedChunks(nextCompleted);
           if (model) setUsedModel(model);
-          setCompletedUnits(index + 1);
-          setPreviousSummary(makeRollingSummary(text));
+          setCompletedUnits(nextCompleted.length);
+          rollingContext = makeRollingContext(chunk.originalChinese, text);
         }
 
         setIsStreaming(false);
@@ -728,6 +1016,9 @@ export default function HomePage() {
       await new Promise((resolve) => setTimeout(resolve, 280));
 
       setActiveView("english");
+      setReviewMode(false);
+      setTranslationStale(false);
+      setCanResume(false);
       setProgressStep("done");
       setStatusMessage("Translation complete.");
       setTimeout(() => {
@@ -737,15 +1028,24 @@ export default function HomePage() {
     } catch (error) {
       setStatusMessage("");
       setProgressStep("idle");
-      setErrorMessage(error instanceof Error ? error.message : "Translation failed.");
+      const cancelled = abortControllerRef.current?.signal.aborted;
+      setErrorMessage(cancelled ? "Translation paused. Resume when you are ready." : error instanceof Error ? error.message : "Translation failed.");
+      setCanResume(true);
     } finally {
       setProcessing(false);
       setIsStreaming(false);
       setLiveText("");
+      abortControllerRef.current = null;
     }
   };
 
+  const handleCancelTranslation = () => {
+    setStatusMessage("Pausing translation...");
+    abortControllerRef.current?.abort();
+  };
+
   const handleReset = () => {
+    abortControllerRef.current?.abort();
     resetPdfState();
     resetImageState();
     setPastedText("");
@@ -760,8 +1060,15 @@ export default function HomePage() {
     setCompletedUnits(0);
     setTotalUnits(0);
     setExtractedEntities([]);
-    setPreviousSummary("");
+    setGlossaryEntries([]);
+    setApprovedChunkIds([]);
+    setTranslationStale(false);
+    setCanResume(false);
+    setReviewMode(false);
+    setSourcePanelOpen(true);
     setActiveView("original");
+    editHistoryRef.current = [];
+    clearWorkspaceSnapshot().catch(() => undefined);
   };
 
   const handleCopyEnglish = async () => {
@@ -819,32 +1126,52 @@ export default function HomePage() {
         />
 
         <div className="grid gap-4 xl:grid-cols-[370px_minmax(0,1fr)] xl:items-start">
-          <aside className="space-y-4 xl:sticky xl:top-4">
-            <section className="workspace-panel p-4">
+          <aside className="space-y-4 xl:sticky xl:top-4 xl:flex xl:h-[calc(100vh-7.25rem)] xl:flex-col xl:space-y-0">
+            <div className="space-y-4 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-1">
+              <section className="workspace-panel p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="eyebrow">Source</p>
                   <h2 className="mt-1 text-lg font-semibold text-slate-950 dark:text-slate-50">Add content</h2>
                 </div>
-                <span className={hasSourceLoaded ? "status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200" : "status-pill"}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${hasSourceLoaded ? "bg-emerald-500" : "bg-slate-400"}`} />
-                  {hasSourceLoaded ? "Ready" : "Waiting"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={hasSourceLoaded ? "status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200" : "status-pill"}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${hasSourceLoaded ? "bg-emerald-500" : "bg-slate-400"}`} />
+                    {hasSourceLoaded ? "Ready" : "Waiting"}
+                  </span>
+                  {hasSourceLoaded ? (
+                    <button
+                      type="button"
+                      onClick={() => setSourcePanelOpen((open) => !open)}
+                      className="secondary-button px-2.5 py-1.5 text-xs"
+                    >
+                      {sourcePanelOpen ? "Hide" : "Change"}
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
-              <div className="mt-4">
-                <InputModeTabs value={inputMode} onChange={setInputMode} />
-              </div>
+              {sourcePanelOpen || !hasSourceLoaded ? (
+                <>
+                  <div className="mt-4">
+                    <InputModeTabs value={inputMode} onChange={handleInputModeChange} />
+                  </div>
 
-              <div className="mt-4">
-                {inputMode === "pdf" ? (
-                  <FileUpload fileName={pdfName} onFileSelect={handleFileSelect} />
-                ) : inputMode === "image" ? (
-                  <ImageUpload fileName={imageName} onFileSelect={handleImageSelect} />
-                ) : (
-                  <TextInputPanel value={pastedText} onChange={setPastedText} onClear={() => setPastedText("")} />
-                )}
-              </div>
+                  <div className="mt-4">
+                    {inputMode === "pdf" ? (
+                      <FileUpload fileName={pdfName} onFileSelect={handleFileSelect} />
+                    ) : inputMode === "image" ? (
+                      <ImageUpload fileName={imageName} onFileSelect={handleImageSelect} />
+                    ) : (
+                      <TextInputPanel
+                        value={pastedText}
+                        onChange={handlePastedTextChange}
+                        onClear={() => handlePastedTextChange("")}
+                      />
+                    )}
+                  </div>
+                </>
+              ) : null}
 
               <div className="workspace-panel-quiet mt-4 p-3">
                 <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{sourceSummary.title}</p>
@@ -863,9 +1190,9 @@ export default function HomePage() {
                 </div>
                 <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">{sourceSummary.helper}</p>
               </div>
-            </section>
+              </section>
 
-            <section className="workspace-panel p-4">
+              <section className="workspace-panel p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="eyebrow">Translation</p>
@@ -875,11 +1202,11 @@ export default function HomePage() {
               </div>
 
               <div className="mt-4">
-                <DomainSelector value={domain} onChange={setDomain} disabled={processing} />
+                <DomainSelector value={domain} onChange={handleDomainChange} disabled={processing} />
                 <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{selectedDomain.description}</p>
               </div>
 
-              <div className="mt-4 grid gap-3">
+              <div className="mt-4">
                 <div className="workspace-panel-quiet p-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Glossary</p>
@@ -911,49 +1238,34 @@ export default function HomePage() {
                     </div>
                   ) : null}
                 </div>
-
-                <div className="workspace-panel-quiet p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Connection</p>
-                    <button type="button" onClick={() => setIsSettingsOpen(true)} className="secondary-button px-2.5 py-1.5 text-xs">
-                      Manage
-                    </button>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <span
-                      className={`status-pill ${
-                        usingCustomKey
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
-                          : ""
-                      }`}
-                    >
-                      <span className={`h-1.5 w-1.5 rounded-full ${usingCustomKey ? "bg-emerald-500" : "bg-slate-400"}`} />
-                      {usingCustomKey ? "Personal key" : "Shared key"}
-                    </span>
-                    {usedModel ? <span className="status-pill">{usedModel}</span> : null}
-                  </div>
-                </div>
               </div>
+              </section>
+            </div>
 
-              <div className="mt-4 grid gap-2">
+            <section className="workspace-panel grid shrink-0 gap-2 p-3 shadow-lg shadow-slate-950/5 dark:shadow-black/20 xl:mt-3">
+              {processing ? (
+                <button type="button" onClick={handleCancelTranslation} className="secondary-button w-full">
+                  Pause translation
+                </button>
+              ) : (
                 <button type="button" onClick={handleTranslate} disabled={translateDisabled} className="primary-button w-full gap-2">
-                  {processing ? (
-                    <>
-                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/70 border-t-transparent dark:border-slate-950/50 dark:border-t-transparent" />
-                      Translating...
-                    </>
-                  ) : (
-                    "Translate to English"
-                  )}
+                  {canResume && !translationStale
+                    ? "Resume translation"
+                    : translationStale
+                      ? "Update translation"
+                      : "Translate to English"}
                 </button>
-                <button type="button" onClick={handleReset} disabled={processing} className="secondary-button w-full">
-                  New document
-                </button>
-              </div>
+              )}
+              <button type="button" onClick={handleReset} disabled={processing} className="secondary-button w-full">
+                New document
+              </button>
+              <p className="text-center text-[11px] leading-4 text-slate-400 dark:text-slate-500">
+                Workspace changes save automatically on this device.
+              </p>
             </section>
           </aside>
 
-          <section className="min-w-0 space-y-4">
+          <section ref={resultsRef} className="min-w-0 scroll-mt-4 space-y-4">
             <ProgressIndicator
               step={progressStep}
               processing={processing}
@@ -971,13 +1283,27 @@ export default function HomePage() {
                   <div className="sticky top-4 z-10 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-base font-semibold text-slate-950 dark:text-slate-50">
-                          {processing ? "Translation in progress" : "Translation results"}
-                        </h3>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-semibold text-slate-950 dark:text-slate-50">
+                            {processing ? "Translation in progress" : "Translation results"}
+                          </h3>
+                          {translationStale ? (
+                            <span className="status-pill bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                              Source changed
+                            </span>
+                          ) : null}
+                          {!processing && hasTranslation && !translationStale ? (
+                            <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                              Current
+                            </span>
+                          ) : null}
+                        </div>
                         <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
                           {processing && totalUnits > 0
                             ? `Working through ${Math.min(completedUnits, totalUnits)} of ${totalUnits} ${inputMode === "pdf" ? "pages" : inputMode === "image" ? "image steps" : "sections"}`
-                            : `${sourceLabel}${usedModel ? ` · ${usedModel}` : ""}`}
+                            : translationStale
+                              ? "Update the translation before copying or exporting."
+                              : `${sourceLabel}${usedModel ? ` · ${usedModel}` : ""}`}
                         </p>
                       </div>
                       <ExportButtons
@@ -986,49 +1312,86 @@ export default function HomePage() {
                         onDownloadTxt={handleDownloadTxt}
                         onDownloadPdf={handleDownloadPdf}
                         copied={toastVisible && toastMessage === "Copied to clipboard."}
-                        disabled={!englishText || processing}
+                        disabled={!englishText || processing || translationStale}
                       />
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                      <TranslationTabs active={activeView} onChange={setActiveView} />
+                      <TranslationTabs
+                        active={activeView}
+                        onChange={(view) => {
+                          setActiveView(view);
+                          if (view !== "english") {
+                            setReviewMode(false);
+                          }
+                        }}
+                      />
                       {(activeView === "english" || (activeView === "original" && inputMode !== "image")) ? (
-                        <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950/60">
-                          <button
-                            type="button"
-                            onClick={() => setDocumentFontSize((prev) => Math.max(14, prev - 1))}
-                            className="icon-button h-8 w-8 border-0 bg-transparent"
-                            title="Decrease text size"
-                          >
-                            A-
-                          </button>
-                          <span className="min-w-12 px-1 text-center text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">
-                            {documentFontSize}px
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setDocumentFontSize((prev) => Math.min(22, prev + 1))}
-                            className="icon-button h-8 w-8 border-0 bg-transparent"
-                            title="Increase text size"
-                          >
-                            A+
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDocumentFontSize(16)}
-                            className="secondary-button h-8 border-0 bg-transparent px-2 text-xs"
-                            title="Reset text size"
-                          >
-                            100%
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setReadingWidth((prev) => (prev === "focused" ? "wide" : "focused"))}
-                            className="secondary-button h-8 border-0 bg-transparent px-2 text-xs"
-                            title="Toggle reading width"
-                          >
-                            {readingWidth === "focused" ? "Wide" : "Focus"}
-                          </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {activeView === "english" && hasTranslation && !processing ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setReviewMode((enabled) => !enabled)}
+                                className={`secondary-button h-9 px-3 text-xs ${
+                                  reviewMode
+                                    ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200"
+                                    : ""
+                                }`}
+                              >
+                                {reviewMode ? "Reading view" : "Edit & review"}
+                              </button>
+                              {reviewMode ? (
+                                <button
+                                  type="button"
+                                  onClick={undoTranslationEdit}
+                                  disabled={editHistoryRef.current.length === 0}
+                                  className="secondary-button h-9 px-3 text-xs"
+                                >
+                                  Undo edit
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {!reviewMode ? (
+                            <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950/60">
+                              <button
+                                type="button"
+                                onClick={() => setDocumentFontSize((prev) => Math.max(14, prev - 1))}
+                                className="icon-button h-8 w-8 border-0 bg-transparent"
+                                title="Decrease text size"
+                              >
+                                A-
+                              </button>
+                              <span className="min-w-12 px-1 text-center text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">
+                                {documentFontSize}px
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setDocumentFontSize((prev) => Math.min(22, prev + 1))}
+                                className="icon-button h-8 w-8 border-0 bg-transparent"
+                                title="Increase text size"
+                              >
+                                A+
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDocumentFontSize(16)}
+                                className="secondary-button h-8 border-0 bg-transparent px-2 text-xs"
+                                title="Reset text size"
+                              >
+                                100%
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setReadingWidth((prev) => (prev === "focused" ? "wide" : "focused"))}
+                                className="secondary-button h-8 border-0 bg-transparent px-2 text-xs"
+                                title="Toggle reading width"
+                              >
+                                {readingWidth === "focused" ? "Wide" : "Focus"}
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
@@ -1039,6 +1402,18 @@ export default function HomePage() {
                     <h3 className="mt-1 text-base font-semibold text-slate-950 dark:text-slate-50">Source preview</h3>
                   </div>
                 )}
+
+                {hasTranslation && !processing ? (
+                  <TranslationQualityPanel
+                    issues={qualityIssues}
+                    totalSegments={translatedChunks.length}
+                    approvedSegments={approvedChunkIds.length}
+                    onOpenReview={() => {
+                      setActiveView("english");
+                      setReviewMode(true);
+                    }}
+                  />
+                ) : null}
 
                 {!hasTranslation && !processing ? (
                   inputMode === "image" ? (
@@ -1107,35 +1482,40 @@ export default function HomePage() {
                         </article>
                       ) : inputMode === "pdf" ? (
                         <div className="space-y-4">
-                          {pdfPages.map((page) => (
-                            <article
-                              key={`orig-page-${page.pageNumber}`}
-                              className={`reader-card mx-auto w-full ${readingWidthClass} p-5 sm:p-6`}
-                            >
-                              <div className="mb-3 flex flex-wrap items-center gap-2">
-                                <p className="eyebrow">
-                                  第 {page.pageNumber} 頁 · Page {page.pageNumber}
-                                </p>
-                                {!page.text.trim() ? (
-                                  <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-                                    OCR page
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div
-                                className="text-slate-800 dark:text-slate-100"
-                                style={{ fontSize: `${documentFontSize}px` }}
+                          {pdfPages.map((page) => {
+                            const savedPage = translationPages.find((entry) => entry.pageNumber === page.pageNumber);
+                            const originalText = page.text.trim() || savedPage?.originalText.trim() || "";
+
+                            return (
+                              <article
+                                key={`orig-page-${page.pageNumber}`}
+                                className={`reader-card mx-auto w-full ${readingWidthClass} p-5 sm:p-6`}
                               >
-                                {page.text.trim() ? (
-                                  <ChineseSourceBody text={page.text} />
-                                ) : (
-                                  <p className="cn-text text-sm text-slate-500 dark:text-slate-400">
-                                    此頁未偵測到可選取的文字，翻譯時會改用 OCR。
+                                <div className="mb-3 flex flex-wrap items-center gap-2">
+                                  <p className="eyebrow">
+                                    第 {page.pageNumber} 頁 · Page {page.pageNumber}
                                   </p>
-                                )}
-                              </div>
-                            </article>
-                          ))}
+                                  {!page.text.trim() ? (
+                                    <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                                      OCR text
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div
+                                  className="text-slate-800 dark:text-slate-100"
+                                  style={{ fontSize: `${documentFontSize}px` }}
+                                >
+                                  {originalText ? (
+                                    <ChineseSourceBody text={originalText} />
+                                  ) : (
+                                    <p className="cn-text text-sm text-slate-500 dark:text-slate-400">
+                                      此頁未偵測到可選取的文字，翻譯時會改用 OCR。
+                                    </p>
+                                  )}
+                                </div>
+                              </article>
+                            );
+                          })}
                         </div>
                       ) : (
                         <article className={`reader-card mx-auto w-full ${readingWidthClass} p-6 sm:p-7`}>
@@ -1148,7 +1528,16 @@ export default function HomePage() {
                     ) : null}
 
                     {activeView === "english" ? (
-                      <article className={`reader-card mx-auto w-full ${readingWidthClass} p-6 sm:p-8`}>
+                      reviewMode && !processing ? (
+                        <TranslationEditor
+                          chunks={translatedChunks}
+                          issues={qualityIssues}
+                          approvedChunkIds={approvedChunkIds}
+                          onCommit={commitTranslationEdit}
+                          onToggleApproved={toggleChunkApproved}
+                        />
+                      ) : (
+                        <article className={`reader-card mx-auto w-full ${readingWidthClass} p-6 sm:p-8`}>
                         <div className="mb-5 flex items-center justify-between gap-3">
                           <p className="eyebrow">English Translation</p>
                           {isStreaming ? (
@@ -1199,7 +1588,8 @@ export default function HomePage() {
                             </section>
                           ) : null}
                         </div>
-                      </article>
+                        </article>
+                      )
                     ) : null}
 
                     {activeView === "side-by-side" ? (
@@ -1250,7 +1640,7 @@ export default function HomePage() {
       <EntityGlossary
         extracted={extractedEntities}
         entries={glossaryEntries}
-        onEntriesChange={setGlossaryEntries}
+        onEntriesChange={handleGlossaryEntriesChange}
         open={isGlossaryOpen}
         onClose={() => setIsGlossaryOpen(false)}
       />

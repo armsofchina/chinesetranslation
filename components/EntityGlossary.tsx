@@ -98,7 +98,7 @@ export default function EntityGlossary({ extracted, entries, onEntriesChange, op
       ) : null}
 
       <aside
-        className={`fixed inset-y-0 right-0 z-50 flex w-80 flex-col border-l border-slate-200 bg-white shadow-2xl transition-transform duration-300 dark:border-slate-800 dark:bg-slate-950 ${
+        className={`fixed inset-y-0 right-0 z-50 flex w-[min(94vw,560px)] flex-col border-l border-slate-200 bg-white shadow-2xl transition-transform duration-300 dark:border-slate-800 dark:bg-slate-950 ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
       >

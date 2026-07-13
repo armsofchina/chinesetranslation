@@ -1,6 +1,7 @@
 import { ExtractedPdfPage, TranslationChunk } from "@/lib/types";
 
 const MAX_CHUNK_LENGTH = 1200;
+const SENTENCE_END_RE = /(?<=[。！？!?；;])\s*/u;
 
 const normalizeText = (text: string): string =>
   text
@@ -30,11 +31,59 @@ const splitParagraphs = (text: string): string[] => {
     .filter(Boolean);
 };
 
+const splitOversizedParagraph = (paragraph: string): string[] => {
+  if (paragraph.length <= MAX_CHUNK_LENGTH) {
+    return [paragraph];
+  }
+
+  const sentences = paragraph
+    .split(SENTENCE_END_RE)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const parts: string[] = [];
+  let buffer = "";
+
+  const pushHardSplit = (value: string) => {
+    for (let start = 0; start < value.length; start += MAX_CHUNK_LENGTH) {
+      parts.push(value.slice(start, start + MAX_CHUNK_LENGTH));
+    }
+  };
+
+  for (const sentence of sentences) {
+    if (sentence.length > MAX_CHUNK_LENGTH) {
+      if (buffer) {
+        parts.push(buffer);
+        buffer = "";
+      }
+      pushHardSplit(sentence);
+      continue;
+    }
+
+    if (!buffer) {
+      buffer = sentence;
+      continue;
+    }
+
+    if (buffer.length + sentence.length <= MAX_CHUNK_LENGTH) {
+      buffer += sentence;
+    } else {
+      parts.push(buffer);
+      buffer = sentence;
+    }
+  }
+
+  if (buffer) {
+    parts.push(buffer);
+  }
+
+  return parts;
+};
+
 const mergeParagraphs = (paragraphs: string[]): string[] => {
   const chunks: string[] = [];
   let buffer = "";
 
-  for (const paragraph of paragraphs) {
+  for (const paragraph of paragraphs.flatMap(splitOversizedParagraph)) {
     if (!buffer) {
       buffer = paragraph;
       continue;
