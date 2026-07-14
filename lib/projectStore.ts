@@ -14,6 +14,8 @@ export type WorkspaceSnapshot = {
   savedAt: number;
   inputMode: "document" | "pdf" | "image" | "text";
   documentFormat?: DocumentFormat;
+  documentRangeStart?: number;
+  documentRangeEnd?: number;
   pdfName?: string;
   pdfFile?: File;
   pdfPages: ExtractedPdfPage[];

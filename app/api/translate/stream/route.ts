@@ -121,11 +121,27 @@ export async function POST(request: NextRequest) {
   const temperature = typeof body?.temperature === "number" ? Math.max(0, Math.min(body.temperature, 1)) : undefined;
 
   const encoder = new TextEncoder();
+  const upstreamController = new AbortController();
+  let streamClosed = false;
+  const abortUpstream = () => upstreamController.abort();
+  if (request.signal.aborted) {
+    abortUpstream();
+  } else {
+    request.signal.addEventListener("abort", abortUpstream, { once: true });
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (event: string, data: unknown) => {
-        controller.enqueue(encoder.encode(sseEvent(event, data)));
+        if (streamClosed) {
+          return;
+        }
+        try {
+          controller.enqueue(encoder.encode(sseEvent(event, data)));
+        } catch {
+          streamClosed = true;
+          abortUpstream();
+        }
       };
 
       try {
@@ -136,7 +152,8 @@ export async function POST(request: NextRequest) {
                 apiKey: selectedApiKey,
                 model: imageModel,
                 imageDataUrl: imageTask.imageDataUrl,
-                temperature
+                temperature,
+                signal: upstreamController.signal
               })
             : await streamTranslateImageWithPpq({
               apiKey: selectedApiKey,
@@ -145,7 +162,8 @@ export async function POST(request: NextRequest) {
               domain,
               previousSummary,
               glossary,
-              temperature
+              temperature,
+              signal: upstreamController.signal
             })
           : await streamTranslateWithPpq({
               apiKey: selectedApiKey,
@@ -154,7 +172,8 @@ export async function POST(request: NextRequest) {
               domain,
               previousSummary,
               glossary,
-              temperature
+              temperature,
+              signal: upstreamController.signal
             });
 
         let full = "";
@@ -168,17 +187,28 @@ export async function POST(request: NextRequest) {
         const normalized = normalizeTranslationFootnotes(full);
         send("done", { text: normalized, model: usedModel });
       } catch (error) {
-        const message =
-          error instanceof PpqRequestError
-            ? toUserFriendlyError(error.status, error.message)
-            : "Translation API failed.";
-        send("error", {
-          error: message,
-          status: error instanceof PpqRequestError ? error.status : 500
-        });
+        if (!upstreamController.signal.aborted) {
+          const message =
+            error instanceof PpqRequestError
+              ? toUserFriendlyError(error.status, error.message)
+              : "Translation API failed.";
+          send("error", {
+            error: message,
+            status: error instanceof PpqRequestError ? error.status : 500
+          });
+        }
       } finally {
-        controller.close();
+        request.signal.removeEventListener("abort", abortUpstream);
+        if (!streamClosed) {
+          streamClosed = true;
+          controller.close();
+        }
       }
+    },
+    cancel() {
+      streamClosed = true;
+      request.signal.removeEventListener("abort", abortUpstream);
+      abortUpstream();
     }
   });
 

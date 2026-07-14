@@ -27,6 +27,7 @@ type TranslateChunkInput = {
   previousSummary?: string;
   glossary?: Record<string, string>;
   temperature?: number;
+  signal?: AbortSignal;
 };
 
 type TranslateImageInput = {
@@ -37,6 +38,7 @@ type TranslateImageInput = {
   previousSummary?: string;
   glossary?: Record<string, string>;
   temperature?: number;
+  signal?: AbortSignal;
 };
 
 const extractContentText = (content: unknown): string => {
@@ -84,14 +86,19 @@ const extractDeltaText = (delta: unknown): string => {
   return "";
 };
 
-const requestPpqStream = async (apiKey: string, requestBody: Record<string, unknown>): Promise<Response> => {
+const requestPpqStream = async (
+  apiKey: string,
+  requestBody: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<Response> => {
   const response = await fetch(PPQ_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ ...requestBody, stream: true })
+    body: JSON.stringify({ ...requestBody, stream: true }),
+    signal
   });
 
   if (!response.ok || !response.body) {
@@ -160,7 +167,8 @@ export const streamTranslateWithPpq = async ({
   domain = "general",
   previousSummary,
   glossary,
-  temperature = 0.2
+  temperature = 0.2,
+  signal
 }: TranslateChunkInput): Promise<AsyncGenerator<string, void, unknown>> => {
   const messages = buildTranslationMessages({ text, domain, previousSummary, glossary });
 
@@ -168,7 +176,7 @@ export const streamTranslateWithPpq = async ({
     model,
     messages,
     temperature
-  });
+  }, signal);
 
   return streamPpqDeltas(response);
 };
@@ -180,7 +188,8 @@ export const streamTranslateImageWithPpq = async ({
   domain = "general",
   previousSummary,
   glossary,
-  temperature = 0.1
+  temperature = 0.1,
+  signal
 }: TranslateImageInput): Promise<AsyncGenerator<string, void, unknown>> => {
   const messages = buildVisionTranslationMessages({
     text: "",
@@ -194,7 +203,7 @@ export const streamTranslateImageWithPpq = async ({
     model,
     messages,
     temperature
-  });
+  }, signal);
 
   return streamPpqDeltas(response);
 };
@@ -203,13 +212,14 @@ export const streamOcrImageWithPpq = async ({
   apiKey,
   model,
   imageDataUrl,
-  temperature = 0
+  temperature = 0,
+  signal
 }: TranslateImageInput): Promise<AsyncGenerator<string, void, unknown>> => {
   const response = await requestPpqStream(apiKey, {
     model,
     messages: buildVisionOcrMessages(imageDataUrl),
     temperature
-  });
+  }, signal);
 
   return streamPpqDeltas(response);
 };

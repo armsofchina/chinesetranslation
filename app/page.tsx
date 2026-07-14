@@ -5,6 +5,7 @@ import ApiKeySettings from "@/components/ApiKeySettings";
 import AppHeader from "@/components/AppHeader";
 import ChineseSourceBody from "@/components/ChineseSourceBody";
 import DocumentSourceView from "@/components/DocumentSourceView";
+import DocumentRangeSelector from "@/components/DocumentRangeSelector";
 import DomainSelector from "@/components/DomainSelector";
 import EntityGlossary, { GlossaryEntry } from "@/components/EntityGlossary";
 import ErrorState from "@/components/ErrorState";
@@ -13,6 +14,7 @@ import FileUpload from "@/components/FileUpload";
 import ImageSideBySideView from "@/components/ImageSideBySideView";
 import ImageUpload from "@/components/ImageUpload";
 import InputModeTabs, { InputMode } from "@/components/InputModeTabs";
+import LargeFileWarningModal, { TranslationPreflightSummary } from "@/components/LargeFileWarningModal";
 import PdfSideBySideView from "@/components/PdfSideBySideView";
 import ProgressIndicator, { ProgressStep } from "@/components/ProgressIndicator";
 import SideBySideView from "@/components/SideBySideView";
@@ -53,6 +55,11 @@ const LEGACY_USER_API_KEY_STORAGE = "translator-user-openrouter-key";
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_DOCUMENT_UNITS = 250;
+const LARGE_FILE_BYTES = 10 * 1024 * 1024;
+const LARGE_SOURCE_CHARACTERS = 30_000;
+const LARGE_REQUEST_COUNT = 25;
+const LARGE_OCR_PAGE_COUNT = 5;
+const LARGE_UNIT_COUNT = 30;
 
 const DOCUMENT_FORMAT_LABELS: Record<DocumentFormat, string> = {
   pdf: "PDF",
@@ -80,6 +87,9 @@ export default function HomePage() {
   const [theme, setTheme] = useState<ThemePreference>("system");
   const [inputMode, setInputMode] = useState<InputMode>("document");
   const [documentFormat, setDocumentFormat] = useState<DocumentFormat>("pdf");
+  const [documentRangeStart, setDocumentRangeStart] = useState(1);
+  const [documentRangeEnd, setDocumentRangeEnd] = useState(1);
+  const [isPreflightOpen, setIsPreflightOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [activeUserApiKey, setActiveUserApiKey] = useState("");
@@ -156,6 +166,8 @@ export default function HomePage() {
         const restoredFormat = snapshot.documentFormat || "pdf";
         setInputMode(snapshot.inputMode === "pdf" ? "document" : snapshot.inputMode);
         setDocumentFormat(restoredFormat);
+        setDocumentRangeStart(snapshot.documentRangeStart ?? 1);
+        setDocumentRangeEnd(snapshot.documentRangeEnd ?? Math.max(snapshot.pdfTotalPages, 1));
         setPdfName(snapshot.pdfName);
         setPdfFile(snapshot.pdfFile);
         setPdfPages(snapshot.pdfPages);
@@ -247,6 +259,10 @@ export default function HomePage() {
   );
   const documentFormatLabel = DOCUMENT_FORMAT_LABELS[documentFormat];
   const documentUnitLabel = DOCUMENT_UNIT_LABELS[documentFormat];
+  const selectedDocumentPages = useMemo(
+    () => pdfPages.filter((page) => page.pageNumber >= documentRangeStart && page.pageNumber <= documentRangeEnd),
+    [documentRangeEnd, documentRangeStart, pdfPages]
+  );
   const hasTranslation = useMemo(
     () => translatedChunks.length > 0 || translationPages.some((page) => page.translatedText.trim()),
     [translatedChunks, translationPages]
@@ -324,13 +340,70 @@ export default function HomePage() {
 
   const translateDisabled =
     processing ||
-    (inputMode === "document" ? pdfTotalPages === 0 : inputMode === "image" ? !imageDataUrl : sourceChunks.length === 0);
+    (inputMode === "document" ? selectedDocumentPages.length === 0 : inputMode === "image" ? !imageDataUrl : sourceChunks.length === 0);
   const usingCustomKey = Boolean(activeUserApiKey.trim());
   const canShowPdfSideBySide = inputMode === "document" && documentFormat === "pdf" && Boolean(pdfObjectUrl) && pdfTotalPages > 0;
   const canShowImageSideBySide = inputMode === "image" && Boolean(imageDataUrl) && hasTranslation;
   const showResultsPanel = hasSourceLoaded || hasTranslation || processing;
   const showLivePreview = isStreaming && activeView === "english";
   const readingWidthClass = readingWidth === "wide" ? "max-w-5xl" : "max-w-3xl";
+  const preflightSummary = useMemo<TranslationPreflightSummary>(() => {
+    if (inputMode === "document") {
+      const ocrPages = documentFormat === "pdf"
+        ? selectedDocumentPages.filter((page) => !hasSelectableTextInPdfPage(page.text)).length
+        : 0;
+      const sourceCharacters = selectedDocumentPages.reduce((total, page) => total + page.text.length, 0);
+      const textRequests = createChunksFromPdfPages(selectedDocumentPages).length;
+      const estimatedRequests = Math.max(textRequests + ocrPages * 2, 1);
+      return {
+        sourceCharacters,
+        estimatedRequests,
+        estimatedInputTokens: Math.ceil(sourceCharacters * 1.35 + estimatedRequests * 550 + ocrPages * 2_000),
+        ocrPages,
+        selectedUnits: selectedDocumentPages.length,
+        totalUnits: Math.max(pdfTotalPages, 1),
+        unitLabel: documentUnitLabel,
+        sourceLabel: documentFormatLabel
+      };
+    }
+
+    if (inputMode === "image") {
+      return {
+        sourceCharacters: 0,
+        estimatedRequests: 2,
+        estimatedInputTokens: 4_000,
+        ocrPages: 1,
+        selectedUnits: 1,
+        totalUnits: 1,
+        unitLabel: "image",
+        sourceLabel: "Image"
+      };
+    }
+
+    const sourceCharacters = pastedText.length;
+    const estimatedRequests = Math.max(sourceChunks.length, 1);
+    return {
+      sourceCharacters,
+      estimatedRequests,
+      estimatedInputTokens: Math.ceil(sourceCharacters * 1.35 + estimatedRequests * 550),
+      ocrPages: 0,
+      selectedUnits: sourceChunks.length,
+      totalUnits: Math.max(sourceChunks.length, 1),
+      unitLabel: "section",
+      sourceLabel: "Pasted text"
+    };
+  }, [documentFormat, documentFormatLabel, documentUnitLabel, inputMode, pastedText.length, pdfTotalPages, selectedDocumentPages, sourceChunks]);
+
+  const requiresLargeFileWarning = useMemo(
+    () =>
+      preflightSummary.sourceCharacters >= LARGE_SOURCE_CHARACTERS ||
+      preflightSummary.estimatedRequests >= LARGE_REQUEST_COUNT ||
+      preflightSummary.ocrPages >= LARGE_OCR_PAGE_COUNT ||
+      preflightSummary.selectedUnits >= LARGE_UNIT_COUNT ||
+      (inputMode === "document" && (pdfFile?.size ?? 0) >= LARGE_FILE_BYTES) ||
+      (inputMode === "image" && (imageDataUrl?.length ?? 0) >= 8_000_000),
+    [imageDataUrl?.length, inputMode, pdfFile?.size, preflightSummary]
+  );
 
   useEffect(() => {
     if (!processing && !hasTranslation && hasSourceLoaded) {
@@ -364,6 +437,8 @@ export default function HomePage() {
         savedAt: Date.now(),
         inputMode,
         documentFormat,
+        documentRangeStart,
+        documentRangeEnd,
         pdfName,
         pdfFile,
         pdfPages,
@@ -389,6 +464,8 @@ export default function HomePage() {
     canResume,
     domain,
     documentFormat,
+    documentRangeEnd,
+    documentRangeStart,
     extractedEntities,
     glossaryEntries,
     imageDataUrl,
@@ -449,6 +526,17 @@ export default function HomePage() {
 
   const handleGlossaryEntriesChange = (entries: GlossaryEntry[]) => {
     setGlossaryEntries(entries);
+    markTranslationStale();
+  };
+
+  const handleDocumentRangeChange = (start: number, end: number) => {
+    const normalizedStart = Math.max(1, Math.min(start, Math.max(pdfTotalPages, 1)));
+    const normalizedEnd = Math.max(normalizedStart, Math.min(end, Math.max(pdfTotalPages, 1)));
+    if (normalizedStart === documentRangeStart && normalizedEnd === documentRangeEnd) {
+      return;
+    }
+    setDocumentRangeStart(normalizedStart);
+    setDocumentRangeEnd(normalizedEnd);
     markTranslationStale();
   };
 
@@ -515,6 +603,8 @@ export default function HomePage() {
 
   const resetPdfState = () => {
     setDocumentFormat("pdf");
+    setDocumentRangeStart(1);
+    setDocumentRangeEnd(1);
     setPdfName(undefined);
     setPdfFile(undefined);
     setPdfPages([]);
@@ -595,6 +685,8 @@ export default function HomePage() {
 
     setPdfPages(result.pages);
     setPdfTotalPages(result.totalPages);
+    setDocumentRangeStart(1);
+    setDocumentRangeEnd(Math.max(result.totalPages, 1));
     setStatusMessage("");
     setProgressStep("idle");
     setApprovedChunkIds([]);
@@ -764,7 +856,7 @@ export default function HomePage() {
     );
 
   const handleTranslateDocumentByUnit = async (resume: boolean) => {
-    const pagesToTranslate = pdfPages;
+    const pagesToTranslate = selectedDocumentPages;
     const completedChunks: TranslationChunk[] = resume ? translatedChunks.filter((chunk) => chunk.translatedEnglish.trim()) : [];
     const completedPages: TranslationPage[] = resume
       ? translationPages.filter((page) => page.translatedText.trim())
@@ -961,12 +1053,16 @@ export default function HomePage() {
     setLiveText("");
   };
 
-  const handleTranslate = async () => {
+  const runTranslation = async () => {
     const resume = canResume && !translationStale;
     setErrorMessage("");
 
     if (inputMode === "document" && pdfTotalPages === 0) {
       setErrorMessage("Upload a document to begin.");
+      return;
+    }
+    if (inputMode === "document" && selectedDocumentPages.length === 0) {
+      setErrorMessage(`The selected ${documentUnitLabel} range has no readable content.`);
       return;
     }
     if (inputMode === "image" && !imageDataUrl) {
@@ -979,6 +1075,7 @@ export default function HomePage() {
     }
 
     setProcessing(true);
+    setIsPreflightOpen(false);
     setCanResume(false);
     if (!resume) {
       setTranslatedChunks([]);
@@ -1086,6 +1183,19 @@ export default function HomePage() {
     }
   };
 
+  const handleTranslate = () => {
+    if (canResume && !translationStale) {
+      void runTranslation();
+      return;
+    }
+    if (requiresLargeFileWarning) {
+      setErrorMessage("");
+      setIsPreflightOpen(true);
+      return;
+    }
+    void runTranslation();
+  };
+
   const handleCancelTranslation = () => {
     setStatusMessage("Pausing translation...");
     abortControllerRef.current?.abort();
@@ -1093,6 +1203,7 @@ export default function HomePage() {
 
   const handleReset = () => {
     abortControllerRef.current?.abort();
+    setIsPreflightOpen(false);
     setInputMode("document");
     resetPdfState();
     resetImageState();
@@ -1255,6 +1366,20 @@ export default function HomePage() {
                 <DomainSelector value={domain} onChange={handleDomainChange} disabled={processing} />
                 <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{selectedDomain.description}</p>
               </div>
+
+              {inputMode === "document" && pdfTotalPages > 1 ? (
+                <div className="workspace-panel-quiet mt-4 p-3">
+                  <DocumentRangeSelector
+                    start={documentRangeStart}
+                    end={documentRangeEnd}
+                    totalUnits={pdfTotalPages}
+                    selectedUnits={selectedDocumentPages.length}
+                    unitLabel={documentUnitLabel}
+                    disabled={processing}
+                    onChange={handleDocumentRangeChange}
+                  />
+                </div>
+              ) : null}
 
               <div className="mt-4">
                 <div className="workspace-panel-quiet p-3">
@@ -1665,6 +1790,18 @@ export default function HomePage() {
         onRememberKeyChange={setRememberKey}
         onSave={handleSaveApiKey}
         onClearSaved={handleClearSavedKey}
+      />
+
+      <LargeFileWarningModal
+        open={isPreflightOpen}
+        summary={preflightSummary}
+        range={inputMode === "document" ? { start: documentRangeStart, end: documentRangeEnd } : undefined}
+        onRangeChange={inputMode === "document" ? handleDocumentRangeChange : undefined}
+        onCancel={() => setIsPreflightOpen(false)}
+        onConfirm={() => {
+          setIsPreflightOpen(false);
+          void runTranslation();
+        }}
       />
 
       <EntityGlossary
