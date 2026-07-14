@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { AiProviderId, normalizeAiProvider } from "@/lib/aiProviders";
 import { extractEntitiesWithLlm } from "@/lib/extractEntities";
 import { TranslationDomain } from "@/lib/prompts";
+import { getMissingProviderKeyMessage, resolveProviderContext } from "@/lib/providerServer";
 import { checkRateLimit, getRequestClientKey } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
@@ -21,7 +23,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const text = typeof body?.text === "string" ? body.text : "";
     const domain = (body?.domain as TranslationDomain) || "general";
-    const userKey = body?.userPpqApiKey?.trim();
+    const providerId = normalizeAiProvider(body?.provider as AiProviderId | undefined);
 
     if (!text.trim()) {
       return NextResponse.json({ error: "No text provided." }, { status: 400 });
@@ -31,19 +33,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Source text is too large for glossary extraction." }, { status: 413 });
     }
 
-    const serverKey = process.env.PPQ_API_KEY?.trim() || process.env.OPENROUTER_API_KEY?.trim();
-    const apiKey = userKey || serverKey;
-
-    if (!apiKey) {
+    const provider = resolveProviderContext(request, body || {});
+    if (!provider) {
       return NextResponse.json(
-        { error: "No PPQ API key is configured." },
+        { error: getMissingProviderKeyMessage(providerId) },
         { status: 400 }
       );
     }
 
-    const model = process.env.PPQ_MODEL?.trim() || process.env.OPENROUTER_MODEL?.trim() || "claude-sonnet-4-5";
-
-    const entities = await extractEntitiesWithLlm({ text, apiKey, model, domain });
+    const entities = await extractEntitiesWithLlm({
+      text,
+      apiKey: provider.apiKey,
+      model: provider.model,
+      domain,
+      endpoint: provider.endpoint,
+      headers: provider.headers
+    });
     return NextResponse.json({ entities });
   } catch {
     return NextResponse.json(

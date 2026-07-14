@@ -1,19 +1,25 @@
 import { NextRequest } from "next/server";
 import {
-  DEFAULT_MODEL,
-  PpqRequestError,
-  streamOcrImageWithPpq,
-  streamTranslateImageWithPpq,
-  streamTranslateWithPpq
-} from "@/lib/ppq";
+  ProviderRequestError,
+  streamOcrImage,
+  streamTranslate,
+  streamTranslateImage
+} from "@/lib/openAiCompatible";
+import { AiProviderId, normalizeAiProvider } from "@/lib/aiProviders";
 import { normalizeTranslationFootnotes } from "@/lib/footnotes";
 import { TranslationDomain } from "@/lib/prompts";
+import {
+  getMissingProviderKeyMessage,
+  resolveProviderContext,
+  toProviderFriendlyError
+} from "@/lib/providerServer";
 import { checkRateLimit, getRequestClientKey } from "@/lib/rateLimit";
 import { TranslateImageTask, TranslationChunk } from "@/lib/types";
 
 type StreamRequestBody = {
   chunk?: TranslationChunk;
   imageTask?: TranslateImageTask;
+  provider?: AiProviderId;
   userApiKey?: string;
   userPpqApiKey?: string;
   userOpenRouterApiKey?: string;
@@ -25,25 +31,6 @@ type StreamRequestBody = {
 };
 
 export const runtime = "nodejs";
-
-const toUserFriendlyError = (status: number, message: string): string => {
-  const normalized = message.toLowerCase();
-  if (status === 401 || status === 403 || normalized.includes("invalid api key")) {
-    return "Invalid PPQ API key. Check your key and try again.";
-  }
-  if (status === 429) {
-    return "PPQ rate limit reached. Please wait and try again.";
-  }
-  if (
-    status === 402 ||
-    normalized.includes("insufficient") ||
-    normalized.includes("credit") ||
-    normalized.includes("balance")
-  ) {
-    return "PPQ reports insufficient balance or payment issues for this key.";
-  }
-  return message || "Translation API failed.";
-};
 
 const sseEvent = (event: string, data: unknown): string =>
   `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -96,20 +83,12 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const model = body?.model?.trim() || DEFAULT_MODEL;
-  const imageModel = process.env.PPQ_VISION_MODEL?.trim() || model;
-
-  const defaultServerKey = process.env.PPQ_API_KEY?.trim() || process.env.OPENROUTER_API_KEY?.trim();
-  const selectedApiKey =
-    body?.userPpqApiKey?.trim() ||
-    body?.userApiKey?.trim() ||
-    body?.userOpenRouterApiKey?.trim() ||
-    defaultServerKey;
-
-  if (!selectedApiKey) {
+  const providerId = normalizeAiProvider(body?.provider);
+  const provider = resolveProviderContext(request, body || {});
+  if (!provider) {
     return new Response(
       JSON.stringify({
-        error: "No PPQ API key is configured. Add a key in settings or configure PPQ_API_KEY on the server."
+        error: getMissingProviderKeyMessage(providerId)
       }),
       { status: 400, headers: { "Content-Type": "application/json" } }
     );
@@ -145,19 +124,23 @@ export async function POST(request: NextRequest) {
       };
 
       try {
-        const usedModel = imageTask ? imageModel : model;
+        const usedModel = imageTask ? provider.visionModel : provider.model;
         const deltas = imageTask
           ? imageTask.mode === "ocr"
-            ? await streamOcrImageWithPpq({
-                apiKey: selectedApiKey,
-                model: imageModel,
+            ? await streamOcrImage({
+                endpoint: provider.endpoint,
+                apiKey: provider.apiKey,
+                model: provider.visionModel,
+                headers: provider.headers,
                 imageDataUrl: imageTask.imageDataUrl,
                 temperature,
                 signal: upstreamController.signal
               })
-            : await streamTranslateImageWithPpq({
-              apiKey: selectedApiKey,
-              model: imageModel,
+            : await streamTranslateImage({
+              endpoint: provider.endpoint,
+              apiKey: provider.apiKey,
+              model: provider.visionModel,
+              headers: provider.headers,
               imageDataUrl: imageTask.imageDataUrl,
               domain,
               previousSummary,
@@ -165,9 +148,11 @@ export async function POST(request: NextRequest) {
               temperature,
               signal: upstreamController.signal
             })
-          : await streamTranslateWithPpq({
-              apiKey: selectedApiKey,
-              model,
+          : await streamTranslate({
+              endpoint: provider.endpoint,
+              apiKey: provider.apiKey,
+              model: provider.model,
+              headers: provider.headers,
               text: chunk!.originalChinese,
               domain,
               previousSummary,
@@ -177,7 +162,7 @@ export async function POST(request: NextRequest) {
             });
 
         let full = "";
-        send("start", { model: usedModel });
+        send("start", { model: usedModel, provider: provider.id });
 
         for await (const delta of deltas) {
           full += delta;
@@ -185,16 +170,16 @@ export async function POST(request: NextRequest) {
         }
 
         const normalized = normalizeTranslationFootnotes(full);
-        send("done", { text: normalized, model: usedModel });
+        send("done", { text: normalized, model: usedModel, provider: provider.id });
       } catch (error) {
         if (!upstreamController.signal.aborted) {
           const message =
-            error instanceof PpqRequestError
-              ? toUserFriendlyError(error.status, error.message)
-              : "Translation API failed.";
+            error instanceof ProviderRequestError
+              ? toProviderFriendlyError(provider, error.status, error.message)
+              : `${provider.label} translation failed.`;
           send("error", {
             error: message,
-            status: error instanceof PpqRequestError ? error.status : 500
+            status: error instanceof ProviderRequestError ? error.status : 500
           });
         }
       } finally {

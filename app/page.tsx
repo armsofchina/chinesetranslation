@@ -24,6 +24,7 @@ import Toast from "@/components/Toast";
 import TranslationTabs, { TranslationView } from "@/components/TranslationTabs";
 import TranslationEditor from "@/components/TranslationEditor";
 import TranslationQualityPanel from "@/components/TranslationQualityPanel";
+import { AiProviderId, normalizeAiProvider } from "@/lib/aiProviders";
 import { downloadBilingualHtml } from "@/lib/exportHtml";
 import { downloadEnglishPdf } from "@/lib/exportPdf";
 import { downloadTxt } from "@/lib/exportTxt";
@@ -52,6 +53,7 @@ import { DocumentFormat, ExtractedPdfPage, ThemePreference, TranslationChunk, Tr
 
 const USER_API_KEY_STORAGE = "translator-user-ppq-key";
 const LEGACY_USER_API_KEY_STORAGE = "translator-user-openrouter-key";
+const PROVIDER_STORAGE = "translator-ai-provider";
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_DOCUMENT_UNITS = 250;
@@ -91,9 +93,15 @@ export default function HomePage() {
   const [documentRangeEnd, setDocumentRangeEnd] = useState(1);
   const [isPreflightOpen, setIsPreflightOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [provider, setProvider] = useState<AiProviderId>("ppq");
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [activeUserApiKey, setActiveUserApiKey] = useState("");
   const [rememberKey, setRememberKey] = useState(false);
+  const [openRouterConnection, setOpenRouterConnection] = useState<{
+    connected: boolean;
+    loading: boolean;
+    userId?: string;
+  }>({ connected: false, loading: true });
 
   const [pdfName, setPdfName] = useState<string | undefined>(undefined);
   const [pdfFile, setPdfFile] = useState<File | undefined>(undefined);
@@ -139,6 +147,7 @@ export default function HomePage() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
   const editHistoryRef = useRef<TranslationChunk[][]>([]);
+  const connectedFromOpenRouterRef = useRef(false);
 
   useEffect(() => {
     const savedTheme = getSavedThemePreference();
@@ -154,16 +163,76 @@ export default function HomePage() {
       window.localStorage.setItem(USER_API_KEY_STORAGE, savedKey);
       window.localStorage.removeItem(LEGACY_USER_API_KEY_STORAGE);
     }
+    setProvider(normalizeAiProvider(window.localStorage.getItem(PROVIDER_STORAGE)));
   }, []);
 
   useEffect(() => {
     let active = true;
+    let toastTimer: number | undefined;
+    const params = new URLSearchParams(window.location.search);
+    const openRouterResult = params.get("openrouter");
+    connectedFromOpenRouterRef.current = openRouterResult === "connected";
+    if (params.get("settings") === "connections") {
+      setIsSettingsOpen(true);
+    }
+    if (openRouterResult === "connected") {
+      setProvider("openrouter");
+      window.localStorage.setItem(PROVIDER_STORAGE, "openrouter");
+      setToastMessage("OpenRouter connected.");
+      setToastVisible(true);
+      toastTimer = window.setTimeout(() => setToastVisible(false), 2400);
+    } else if (openRouterResult === "error") {
+      setToastMessage("OpenRouter connection failed. Please try again.");
+      setToastVisible(true);
+      toastTimer = window.setTimeout(() => setToastVisible(false), 3000);
+    }
+    if (openRouterResult || params.has("settings")) {
+      params.delete("openrouter");
+      params.delete("settings");
+      const nextQuery = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash}`);
+    }
+
+    fetch("/api/auth/openrouter/session", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!active) {
+          return;
+        }
+        setOpenRouterConnection({
+          connected: payload?.connected === true,
+          loading: false,
+          userId: typeof payload?.userId === "string" ? payload.userId : undefined
+        });
+      })
+      .catch(() => {
+        if (active) {
+          setOpenRouterConnection({ connected: false, loading: false });
+        }
+      });
+
+    return () => {
+      active = false;
+      if (toastTimer) {
+        window.clearTimeout(toastTimer);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const connectedFromOpenRouter = connectedFromOpenRouterRef.current;
     loadWorkspaceSnapshot()
       .then((snapshot) => {
         if (!active || !snapshot || snapshot.version !== 1) {
           return;
         }
         const restoredFormat = snapshot.documentFormat || "pdf";
+        const restoredProvider = connectedFromOpenRouter ? "openrouter" : snapshot.provider;
+        if (restoredProvider) {
+          setProvider(restoredProvider);
+          window.localStorage.setItem(PROVIDER_STORAGE, restoredProvider);
+        }
         setInputMode(snapshot.inputMode === "pdf" ? "document" : snapshot.inputMode);
         setDocumentFormat(restoredFormat);
         setDocumentRangeStart(snapshot.documentRangeStart ?? 1);
@@ -186,8 +255,10 @@ export default function HomePage() {
         setExtractedEntities(snapshot.extractedEntities);
         setUsedModel(snapshot.usedModel);
         setApprovedChunkIds(snapshot.approvedChunkIds);
-        setTranslationStale(snapshot.translationStale);
-        setCanResume(snapshot.canResume);
+        const providerChangedOnConnect =
+          connectedFromOpenRouter && snapshot.provider !== "openrouter" && snapshot.translatedChunks.length > 0;
+        setTranslationStale(providerChangedOnConnect || snapshot.translationStale);
+        setCanResume(providerChangedOnConnect ? false : snapshot.canResume);
         setSourcePanelOpen(!snapshot.pdfTotalPages && !snapshot.imageDataUrl && !snapshot.pastedText.trim());
         if (snapshot.translatedChunks.length > 0) {
           setActiveView("english");
@@ -342,6 +413,10 @@ export default function HomePage() {
     processing ||
     (inputMode === "document" ? selectedDocumentPages.length === 0 : inputMode === "image" ? !imageDataUrl : sourceChunks.length === 0);
   const usingCustomKey = Boolean(activeUserApiKey.trim());
+  const connectionActive = provider === "openrouter" ? openRouterConnection.connected : usingCustomKey;
+  const connectionLabel = provider === "openrouter"
+    ? openRouterConnection.connected ? "OpenRouter connected" : "OpenRouter"
+    : usingCustomKey ? "PPQ personal" : "PPQ shared";
   const canShowPdfSideBySide = inputMode === "document" && documentFormat === "pdf" && Boolean(pdfObjectUrl) && pdfTotalPages > 0;
   const canShowImageSideBySide = inputMode === "image" && Boolean(imageDataUrl) && hasTranslation;
   const showResultsPanel = hasSourceLoaded || hasTranslation || processing;
@@ -435,6 +510,7 @@ export default function HomePage() {
       saveWorkspaceSnapshot({
         version: 1,
         savedAt: Date.now(),
+        provider,
         inputMode,
         documentFormat,
         documentRangeStart,
@@ -477,6 +553,7 @@ export default function HomePage() {
     pdfPages,
     pdfScannedMessage,
     pdfTotalPages,
+    provider,
     translatedChunks,
     translationPages,
     translationStale,
@@ -775,6 +852,36 @@ export default function HomePage() {
     window.localStorage.removeItem(LEGACY_USER_API_KEY_STORAGE);
   };
 
+  const handleProviderChange = (nextProvider: AiProviderId) => {
+    if (nextProvider === provider) {
+      return;
+    }
+    setProvider(nextProvider);
+    window.localStorage.setItem(PROVIDER_STORAGE, nextProvider);
+    setErrorMessage("");
+    markTranslationStale();
+  };
+
+  const handleDisconnectOpenRouter = async () => {
+    setOpenRouterConnection((current) => ({ ...current, loading: true }));
+    try {
+      const response = await fetch("/api/auth/openrouter/session", { method: "DELETE" });
+      if (!response.ok) {
+        throw new Error("Unable to disconnect OpenRouter.");
+      }
+      setOpenRouterConnection({ connected: false, loading: false });
+      if (provider === "openrouter") {
+        setProvider("ppq");
+        window.localStorage.setItem(PROVIDER_STORAGE, "ppq");
+        markTranslationStale();
+      }
+      showToast("OpenRouter disconnected.");
+    } catch {
+      setOpenRouterConnection((current) => ({ ...current, loading: false }));
+      setErrorMessage("Unable to disconnect OpenRouter.");
+    }
+  };
+
   const fetchEntityTranslations = async (text: string) => {
     try {
       const response = await fetch("/api/extract-entities", {
@@ -783,7 +890,8 @@ export default function HomePage() {
         body: JSON.stringify({
           text,
           domain,
-          userPpqApiKey: activeUserApiKey || undefined
+          provider,
+          userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined
         })
       });
 
@@ -821,7 +929,8 @@ export default function HomePage() {
         return streamTranslation(
           {
             chunk,
-            userPpqApiKey: activeUserApiKey || undefined,
+            provider,
+            userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
             domain,
             previousSummary: rollingContext || undefined,
             glossary: lockedGlossary,
@@ -843,7 +952,8 @@ export default function HomePage() {
         return streamTranslation(
           {
             imageTask: { ...imageTask, mode: "ocr" },
-            userPpqApiKey: activeUserApiKey || undefined,
+            provider,
+            userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
             temperature: Math.min(0.1, attempt * 0.05)
           },
           {
@@ -1279,7 +1389,8 @@ export default function HomePage() {
       <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
         <AppHeader
           theme={theme}
-          usingCustomKey={usingCustomKey}
+          connectionLabel={connectionLabel}
+          connectionActive={connectionActive}
           onThemeChange={setTheme}
           onOpenApiSettings={() => setIsSettingsOpen(true)}
         />
@@ -1783,13 +1894,18 @@ export default function HomePage() {
       <ApiKeySettings
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+        provider={provider}
         apiKeyDraft={apiKeyDraft}
         rememberKey={rememberKey}
-        statusLabel={usingCustomKey ? "Your PPQ key" : "Default app key"}
+        openRouterConnected={openRouterConnection.connected}
+        openRouterLoading={openRouterConnection.loading}
+        openRouterUserId={openRouterConnection.userId}
+        onProviderChange={handleProviderChange}
         onApiKeyDraftChange={setApiKeyDraft}
         onRememberKeyChange={setRememberKey}
         onSave={handleSaveApiKey}
         onClearSaved={handleClearSavedKey}
+        onDisconnectOpenRouter={() => void handleDisconnectOpenRouter()}
       />
 
       <LargeFileWarningModal

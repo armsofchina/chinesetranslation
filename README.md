@@ -47,14 +47,18 @@ cp .env.local.example .env.local
 PPQ_API_KEY=your_ppq_key_here
 PPQ_MODEL=claude-sonnet-4-5
 PPQ_VISION_MODEL=private/qwen3-vl-30b
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=openrouter/free
+OPENROUTER_VISION_MODEL=openrouter/free
+OPENROUTER_SESSION_SECRET=replace_with_a_long_random_secret
+OPENROUTER_APP_NAME=Translation Vibe
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-Optional compatibility aliases:
+Generate the production-only OpenRouter session secret with:
 
-```env
-OPENROUTER_API_KEY=... # used only as fallback if PPQ_API_KEY is unset
-OPENROUTER_MODEL=...   # used only as fallback if PPQ_MODEL is unset
+```bash
+openssl rand -base64 32
 ```
 
 4. Run the dev server:
@@ -65,19 +69,21 @@ npm run dev
 
 5. Open `http://localhost:3000`.
 
-## API Key Behavior
+## Provider and API Key Behavior
 
-- Default mode: backend uses `PPQ_API_KEY` from server environment.
-- User mode: user enters key in UI and it overrides default key for that request.
-- User key is never stored server-side.
-- User key is only saved in browser localStorage when "Remember my key on this device" is checked.
+- PPQ supports a shared server `PPQ_API_KEY` or an optional personal key entered in settings.
+- OpenRouter supports a shared server `OPENROUTER_API_KEY` or one-click account connection using OAuth PKCE.
+- Connected OpenRouter keys are encrypted into an HttpOnly cookie and are not exposed to browser JavaScript.
+- The selected provider is saved with the local workspace and used for translation, OCR, and glossary extraction.
+- Personal PPQ keys are saved in browser localStorage only when "Remember my key on this device" is checked.
 - If no key is available, API returns:
 
-`No PPQ API key is configured. Add a key in settings or configure PPQ_API_KEY on the server.`
+`Add a PPQ key in settings or configure PPQ_API_KEY on the server.`
 
 ## Safe Deployment Notes
 
 - Keep `PPQ_API_KEY` only in server environment variables.
+- Keep `OPENROUTER_API_KEY` and `OPENROUTER_SESSION_SECRET` only in server environment variables.
 - Never expose `PPQ_API_KEY` via `NEXT_PUBLIC_*` variables.
 - Do not log API keys in server logs or client logs.
 - Use HTTPS in production.

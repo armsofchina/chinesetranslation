@@ -1,3 +1,4 @@
+import { AiProviderId } from "@/lib/aiProviders";
 import { TranslationDomain } from "@/lib/prompts";
 import { TranslateImageTask, TranslationChunk } from "@/lib/types";
 
@@ -13,6 +14,7 @@ type StreamResult = {
 };
 
 type StreamPayloadBase = {
+  provider: AiProviderId;
   userPpqApiKey?: string;
   domain?: TranslationDomain;
   previousSummary?: string;

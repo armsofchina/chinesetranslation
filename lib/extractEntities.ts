@@ -202,16 +202,16 @@ export const extractEntitiesWithLlm = async ({
   apiKey,
   model,
   domain,
-  ppqUrl
+  endpoint,
+  headers
 }: {
   text: string;
   apiKey: string;
   model: string;
   domain: TranslationDomain;
-  ppqUrl?: string;
+  endpoint: string;
+  headers?: Record<string, string>;
 }): Promise<ExtractedEntity[]> => {
-  const PPQ_URL = ppqUrl || process.env.PPQ_CHAT_COMPLETIONS_URL || "https://api.ppq.ai/chat/completions";
-
   const domainNote: Record<TranslationDomain, string> = {
     general: "",
     historical: " Pay special attention to historical offices, reign titles, era names, and period institutions.",
@@ -239,9 +239,10 @@ Output ONLY a JSON array. No markdown, no explanations.
 TEXT SAMPLE:
 ${text.slice(0, 2500)}`;
 
-  const response = await fetch(PPQ_URL, {
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: {
+      ...headers,
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     },

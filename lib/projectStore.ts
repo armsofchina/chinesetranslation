@@ -1,3 +1,4 @@
+import { AiProviderId } from "@/lib/aiProviders";
 import { ExtractedEntity } from "@/lib/extractEntities";
 import { TranslationDomain } from "@/lib/prompts";
 import { DocumentFormat, ExtractedPdfPage, TranslationChunk, TranslationPage } from "@/lib/types";
@@ -12,6 +13,7 @@ export type SavedGlossaryEntry = {
 export type WorkspaceSnapshot = {
   version: 1;
   savedAt: number;
+  provider?: AiProviderId;
   inputMode: "document" | "pdf" | "image" | "text";
   documentFormat?: DocumentFormat;
   documentRangeStart?: number;
