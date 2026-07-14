@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
   }
 
   const providerId = normalizeAiProvider(body?.provider);
-  const provider = resolveProviderContext(request, body || {});
+  const provider = resolveProviderContext(body || {});
   if (!provider) {
     return new Response(
       JSON.stringify({

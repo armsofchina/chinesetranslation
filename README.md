@@ -50,16 +50,11 @@ PPQ_VISION_MODEL=private/qwen3-vl-30b
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openrouter/free
 OPENROUTER_VISION_MODEL=openrouter/free
-OPENROUTER_SESSION_SECRET=replace_with_a_long_random_secret
 OPENROUTER_APP_NAME=Translation Vibe
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-Generate the production-only OpenRouter session secret with:
-
-```bash
-openssl rand -base64 32
-```
+For hosted deployments, set `NEXT_PUBLIC_SITE_URL` to the public HTTPS origin (for example, `https://translate.example.com`) or leave it unset so the app uses the request origin. Do not leave it set to `http://localhost:3000` in a hosted production environment.
 
 4. Run the dev server:
 
@@ -73,7 +68,7 @@ npm run dev
 
 - PPQ supports a shared server `PPQ_API_KEY` or an optional personal key entered in settings.
 - OpenRouter supports a shared server `OPENROUTER_API_KEY` or one-click account connection using OAuth PKCE.
-- Connected OpenRouter keys are encrypted into an HttpOnly cookie and are not exposed to browser JavaScript.
+- Connected OpenRouter keys are stored in the user's browser local storage and sent with OpenRouter translation requests.
 - The selected provider is saved with the local workspace and used for translation, OCR, and glossary extraction.
 - Personal PPQ keys are saved in browser localStorage only when "Remember my key on this device" is checked.
 - If no key is available, API returns:
@@ -83,10 +78,11 @@ npm run dev
 ## Safe Deployment Notes
 
 - Keep `PPQ_API_KEY` only in server environment variables.
-- Keep `OPENROUTER_API_KEY` and `OPENROUTER_SESSION_SECRET` only in server environment variables.
+- Keep a shared `OPENROUTER_API_KEY`, if configured, only in server environment variables.
 - Never expose `PPQ_API_KEY` via `NEXT_PUBLIC_*` variables.
 - Do not log API keys in server logs or client logs.
 - Use HTTPS in production.
+- Browser-stored OpenRouter keys are accessible to JavaScript running on the same origin. Keep dependencies current, use a restrictive content security policy, and avoid third-party scripts.
 - Uploaded files and workspace progress are stored locally in IndexedDB for recovery and are not uploaded by the extraction pipeline.
 - Legacy binary `.ppt` files must be saved as `.pptx` before upload.
 # chinesetranslation

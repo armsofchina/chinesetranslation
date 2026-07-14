@@ -139,7 +139,7 @@ export default function ApiKeySettings({
                   <div>
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">OpenRouter is connected</p>
                     <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                      Translation requests use your OpenRouter key without exposing it to browser JavaScript.
+                      Your OpenRouter key is stored in this browser and sent only to this app&apos;s translation routes.
                     </p>
                     {openRouterUserId ? (
                       <p className="mt-2 font-mono text-[11px] text-slate-500 dark:text-slate-400">{openRouterUserId}</p>
@@ -173,7 +173,7 @@ export default function ApiKeySettings({
                   Connect OpenRouter
                 </a>
                 <p className="mt-3 text-[11px] leading-5 text-slate-400 dark:text-slate-500">
-                  The connection is encrypted in an HttpOnly cookie on this device. You can disconnect here or revoke the key in OpenRouter.
+                  The key is saved in local storage on this device, where browser scripts and extensions may be able to access it. You can disconnect here or revoke it in OpenRouter.
                 </p>
               </>
             )}

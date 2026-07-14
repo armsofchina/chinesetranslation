@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Source text is too large for glossary extraction." }, { status: 413 });
     }
 
-    const provider = resolveProviderContext(request, body || {});
+    const provider = resolveProviderContext(body || {});
     if (!provider) {
       return NextResponse.json(
         { error: getMissingProviderKeyMessage(providerId) },

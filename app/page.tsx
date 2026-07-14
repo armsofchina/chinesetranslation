@@ -25,6 +25,11 @@ import TranslationTabs, { TranslationView } from "@/components/TranslationTabs";
 import TranslationEditor from "@/components/TranslationEditor";
 import TranslationQualityPanel from "@/components/TranslationQualityPanel";
 import { AiProviderId, normalizeAiProvider } from "@/lib/aiProviders";
+import {
+  OPENROUTER_API_KEY_STORAGE,
+  OPENROUTER_CONNECTION_STORAGE,
+  parseOpenRouterBrowserConnection
+} from "@/lib/openRouterBrowser";
 import { downloadBilingualHtml } from "@/lib/exportHtml";
 import { downloadEnglishPdf } from "@/lib/exportPdf";
 import { downloadTxt } from "@/lib/exportTxt";
@@ -96,6 +101,7 @@ export default function HomePage() {
   const [provider, setProvider] = useState<AiProviderId>("ppq");
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [activeUserApiKey, setActiveUserApiKey] = useState("");
+  const [openRouterApiKey, setOpenRouterApiKey] = useState("");
   const [rememberKey, setRememberKey] = useState(false);
   const [openRouterConnection, setOpenRouterConnection] = useState<{
     connected: boolean;
@@ -163,14 +169,24 @@ export default function HomePage() {
       window.localStorage.setItem(USER_API_KEY_STORAGE, savedKey);
       window.localStorage.removeItem(LEGACY_USER_API_KEY_STORAGE);
     }
+    const savedOpenRouterKey = window.localStorage.getItem(OPENROUTER_API_KEY_STORAGE)?.trim() || "";
+    const savedOpenRouterConnection = parseOpenRouterBrowserConnection(
+      window.localStorage.getItem(OPENROUTER_CONNECTION_STORAGE)
+    );
+    setOpenRouterApiKey(savedOpenRouterKey);
+    setOpenRouterConnection({
+      connected: Boolean(savedOpenRouterKey),
+      loading: false,
+      userId: savedOpenRouterConnection?.userId
+    });
     setProvider(normalizeAiProvider(window.localStorage.getItem(PROVIDER_STORAGE)));
   }, []);
 
   useEffect(() => {
-    let active = true;
     let toastTimer: number | undefined;
     const params = new URLSearchParams(window.location.search);
     const openRouterResult = params.get("openrouter");
+    const openRouterError = params.get("openrouter_error");
     connectedFromOpenRouterRef.current = openRouterResult === "connected";
     if (params.get("settings") === "connections") {
       setIsSettingsOpen(true);
@@ -182,37 +198,25 @@ export default function HomePage() {
       setToastVisible(true);
       toastTimer = window.setTimeout(() => setToastVisible(false), 2400);
     } else if (openRouterResult === "error") {
-      setToastMessage("OpenRouter connection failed. Please try again.");
+      const errorMessages: Record<string, string> = {
+        invalid_site_url: "OpenRouter needs a valid HTTPS NEXT_PUBLIC_SITE_URL that matches this site.",
+        session_expired: "OpenRouter sign-in expired. Please try connecting again.",
+        key_exchange_failed: "OpenRouter could not complete sign-in. Please try again.",
+        storage_failed: "This browser blocked local storage, so the OpenRouter connection could not be saved."
+      };
+      setToastMessage(errorMessages[openRouterError || ""] || "OpenRouter is not configured correctly on this server.");
       setToastVisible(true);
-      toastTimer = window.setTimeout(() => setToastVisible(false), 3000);
+      toastTimer = window.setTimeout(() => setToastVisible(false), 6000);
     }
     if (openRouterResult || params.has("settings")) {
       params.delete("openrouter");
+      params.delete("openrouter_error");
       params.delete("settings");
       const nextQuery = params.toString();
       window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash}`);
     }
 
-    fetch("/api/auth/openrouter/session", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((payload) => {
-        if (!active) {
-          return;
-        }
-        setOpenRouterConnection({
-          connected: payload?.connected === true,
-          loading: false,
-          userId: typeof payload?.userId === "string" ? payload.userId : undefined
-        });
-      })
-      .catch(() => {
-        if (active) {
-          setOpenRouterConnection({ connected: false, loading: false });
-        }
-      });
-
     return () => {
-      active = false;
       if (toastTimer) {
         window.clearTimeout(toastTimer);
       }
@@ -862,24 +866,17 @@ export default function HomePage() {
     markTranslationStale();
   };
 
-  const handleDisconnectOpenRouter = async () => {
-    setOpenRouterConnection((current) => ({ ...current, loading: true }));
-    try {
-      const response = await fetch("/api/auth/openrouter/session", { method: "DELETE" });
-      if (!response.ok) {
-        throw new Error("Unable to disconnect OpenRouter.");
-      }
-      setOpenRouterConnection({ connected: false, loading: false });
-      if (provider === "openrouter") {
-        setProvider("ppq");
-        window.localStorage.setItem(PROVIDER_STORAGE, "ppq");
-        markTranslationStale();
-      }
-      showToast("OpenRouter disconnected.");
-    } catch {
-      setOpenRouterConnection((current) => ({ ...current, loading: false }));
-      setErrorMessage("Unable to disconnect OpenRouter.");
+  const handleDisconnectOpenRouter = () => {
+    window.localStorage.removeItem(OPENROUTER_API_KEY_STORAGE);
+    window.localStorage.removeItem(OPENROUTER_CONNECTION_STORAGE);
+    setOpenRouterApiKey("");
+    setOpenRouterConnection({ connected: false, loading: false });
+    if (provider === "openrouter") {
+      setProvider("ppq");
+      window.localStorage.setItem(PROVIDER_STORAGE, "ppq");
+      markTranslationStale();
     }
+    showToast("OpenRouter disconnected.");
   };
 
   const fetchEntityTranslations = async (text: string) => {
@@ -891,7 +888,8 @@ export default function HomePage() {
           text,
           domain,
           provider,
-          userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined
+          userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
+          userOpenRouterApiKey: provider === "openrouter" ? openRouterApiKey || undefined : undefined
         })
       });
 
@@ -931,6 +929,7 @@ export default function HomePage() {
             chunk,
             provider,
             userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
+            userOpenRouterApiKey: provider === "openrouter" ? openRouterApiKey || undefined : undefined,
             domain,
             previousSummary: rollingContext || undefined,
             glossary: lockedGlossary,
@@ -954,6 +953,7 @@ export default function HomePage() {
             imageTask: { ...imageTask, mode: "ocr" },
             provider,
             userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
+            userOpenRouterApiKey: provider === "openrouter" ? openRouterApiKey || undefined : undefined,
             temperature: Math.min(0.1, attempt * 0.05)
           },
           {

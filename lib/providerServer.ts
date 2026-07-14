@@ -1,12 +1,6 @@
 import "server-only";
 
-import { NextRequest } from "next/server";
 import { AiProviderId, AI_PROVIDER_LABELS, normalizeAiProvider } from "@/lib/aiProviders";
-import {
-  OPENROUTER_SESSION_COOKIE,
-  OpenRouterSession,
-  unsealOpenRouterValue
-} from "@/lib/openRouterSession";
 
 export type ProviderRequestCredentials = {
   provider?: AiProviderId;
@@ -36,22 +30,16 @@ const getOpenRouterHeaders = (): Record<string, string> => {
   return headers;
 };
 
-export const getOpenRouterSession = (request: NextRequest): OpenRouterSession | undefined =>
-  unsealOpenRouterValue<OpenRouterSession>(request.cookies.get(OPENROUTER_SESSION_COOKIE)?.value);
-
 export const resolveProviderContext = (
-  request: NextRequest,
   body: ProviderRequestCredentials & { model?: string }
 ): ProviderContext | undefined => {
   const id = normalizeAiProvider(body.provider);
   const requestedModel = body.model?.trim();
 
   if (id === "openrouter") {
-    const connectedSession = getOpenRouterSession(request);
     const apiKey =
       body.userOpenRouterApiKey?.trim() ||
       body.userApiKey?.trim() ||
-      connectedSession?.apiKey ||
       process.env.OPENROUTER_API_KEY?.trim();
     if (!apiKey) {
       return undefined;

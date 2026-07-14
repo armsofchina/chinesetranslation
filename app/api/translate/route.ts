@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No text or image inputs provided for translation." }, { status: 400 });
     }
 
-    providerContext = resolveProviderContext(request, body);
+    providerContext = resolveProviderContext(body);
     if (!providerContext) {
       return NextResponse.json(
         {

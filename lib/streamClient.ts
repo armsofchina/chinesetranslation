@@ -16,6 +16,7 @@ type StreamResult = {
 type StreamPayloadBase = {
   provider: AiProviderId;
   userPpqApiKey?: string;
+  userOpenRouterApiKey?: string;
   domain?: TranslationDomain;
   previousSummary?: string;
   glossary?: Record<string, string>;

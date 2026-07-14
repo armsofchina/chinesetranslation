@@ -2,6 +2,24 @@ import "server-only";
 
 import { NextRequest } from "next/server";
 
+export class OpenRouterOAuthConfigurationError extends Error {
+  constructor(
+    public readonly code: "invalid_site_url",
+    message: string
+  ) {
+    super(message);
+    this.name = "OpenRouterOAuthConfigurationError";
+  }
+}
+
+const parseUrl = (value: string, errorMessage: string): URL => {
+  try {
+    return new URL(value);
+  } catch {
+    throw new OpenRouterOAuthConfigurationError("invalid_site_url", errorMessage);
+  }
+};
+
 export const getRequestOrigin = (request: NextRequest): string => {
   const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
   const host = forwardedHost || request.headers.get("host")?.trim();
@@ -12,12 +30,24 @@ export const getRequestOrigin = (request: NextRequest): string => {
 
 export const getAppBaseUrl = (fallbackOrigin: string): string => {
   const configuredUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  const fallbackUrl = new URL(fallbackOrigin);
+  const fallbackUrl = parseUrl(fallbackOrigin, "The request origin is not a valid URL.");
   const fallbackIsLocal = fallbackUrl.hostname === "localhost" || fallbackUrl.hostname === "127.0.0.1";
-  const url = new URL(process.env.NODE_ENV !== "production" && fallbackIsLocal ? fallbackOrigin : configuredUrl || fallbackOrigin);
+  const parsedConfiguredUrl = configuredUrl
+    ? parseUrl(configuredUrl, "NEXT_PUBLIC_SITE_URL must be a valid absolute URL.")
+    : undefined;
+  const configuredIsLocal = parsedConfiguredUrl?.hostname === "localhost" || parsedConfiguredUrl?.hostname === "127.0.0.1";
+  const ignoreLocalProductionPlaceholder = process.env.NODE_ENV === "production" && !fallbackIsLocal && configuredIsLocal;
+  const url = process.env.NODE_ENV !== "production" && fallbackIsLocal
+    ? fallbackUrl
+    : ignoreLocalProductionPlaceholder
+      ? fallbackUrl
+      : parsedConfiguredUrl || fallbackUrl;
   const localDevelopment = url.hostname === "localhost" || url.hostname === "127.0.0.1";
   if (url.protocol !== "https:" && !localDevelopment) {
-    throw new Error("NEXT_PUBLIC_SITE_URL must use HTTPS outside local development.");
+    throw new OpenRouterOAuthConfigurationError(
+      "invalid_site_url",
+      "NEXT_PUBLIC_SITE_URL must use HTTPS outside local development."
+    );
   }
   return url.origin;
 };
