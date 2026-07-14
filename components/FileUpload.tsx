@@ -16,7 +16,7 @@ export default function FileUpload({ fileName, onFileSelect }: FileUploadProps) 
       <input
         id={inputId}
         type="file"
-        accept="application/pdf"
+        accept=".pdf,.docx,.epub,.pptx,application/pdf,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation"
         onChange={(event) => onFileSelect(event.target.files?.[0] ?? null)}
         className="sr-only"
       />
@@ -41,9 +41,9 @@ export default function FileUpload({ fileName, onFileSelect }: FileUploadProps) 
         }`}
       >
         <p className="break-words text-sm font-medium text-slate-800 dark:text-slate-100">
-          {fileName ? fileName : "Drop a PDF here or click to browse"}
+          {fileName ? fileName : "Drop a document here or click to browse"}
         </p>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">PDF with selectable text or scanned pages</p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">PDF, DOCX, EPUB, or PowerPoint (.pptx)</p>
       </label>
     </section>
   );

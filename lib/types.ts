@@ -1,5 +1,7 @@
 export type ThemePreference = "light" | "dark" | "system";
 
+export type DocumentFormat = "pdf" | "docx" | "epub" | "pptx";
+
 export type TranslationChunk = {
   id: string;
   pageNumber: number;
@@ -33,6 +35,17 @@ export type PdfExtractResult =
   | {
       kind: "scanned";
       message: string;
+      pages: ExtractedPdfPage[];
+      totalPages: number;
+    }
+  | {
+      kind: "error";
+      message: string;
+    };
+
+export type StructuredDocumentExtractResult =
+  | {
+      kind: "success";
       pages: ExtractedPdfPage[];
       totalPages: number;
     }

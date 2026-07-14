@@ -1,6 +1,6 @@
 import { ExtractedEntity } from "@/lib/extractEntities";
 import { TranslationDomain } from "@/lib/prompts";
-import { ExtractedPdfPage, TranslationChunk, TranslationPage } from "@/lib/types";
+import { DocumentFormat, ExtractedPdfPage, TranslationChunk, TranslationPage } from "@/lib/types";
 
 export type SavedGlossaryEntry = {
   chinese: string;
@@ -12,7 +12,8 @@ export type SavedGlossaryEntry = {
 export type WorkspaceSnapshot = {
   version: 1;
   savedAt: number;
-  inputMode: "pdf" | "image" | "text";
+  inputMode: "document" | "pdf" | "image" | "text";
+  documentFormat?: DocumentFormat;
   pdfName?: string;
   pdfFile?: File;
   pdfPages: ExtractedPdfPage[];

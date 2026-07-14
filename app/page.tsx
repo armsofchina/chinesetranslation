@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ApiKeySettings from "@/components/ApiKeySettings";
 import AppHeader from "@/components/AppHeader";
 import ChineseSourceBody from "@/components/ChineseSourceBody";
+import DocumentSourceView from "@/components/DocumentSourceView";
 import DomainSelector from "@/components/DomainSelector";
 import EntityGlossary, { GlossaryEntry } from "@/components/EntityGlossary";
 import ErrorState from "@/components/ErrorState";
@@ -24,6 +25,7 @@ import TranslationQualityPanel from "@/components/TranslationQualityPanel";
 import { downloadBilingualHtml } from "@/lib/exportHtml";
 import { downloadEnglishPdf } from "@/lib/exportPdf";
 import { downloadTxt } from "@/lib/exportTxt";
+import { extractStructuredDocument, getDocumentFormat } from "@/lib/documentExtract";
 import { ExtractedEntity, extractEntitiesHeuristic } from "@/lib/extractEntities";
 import { normalizeTranslationFootnotes, parseTranslationText } from "@/lib/footnotes";
 import { fileToDataUrl, hasSelectableTextInPdfPage, renderPdfPagesToJpegDataUrls } from "@/lib/imageOcr";
@@ -44,13 +46,27 @@ import {
   joinEnglishTranslation
 } from "@/lib/textChunking";
 import { applyThemePreference, getSavedThemePreference, saveThemePreference } from "@/lib/theme";
-import { ExtractedPdfPage, ThemePreference, TranslationChunk, TranslationPage } from "@/lib/types";
+import { DocumentFormat, ExtractedPdfPage, ThemePreference, TranslationChunk, TranslationPage } from "@/lib/types";
 
 const USER_API_KEY_STORAGE = "translator-user-ppq-key";
 const LEGACY_USER_API_KEY_STORAGE = "translator-user-openrouter-key";
-const MAX_PDF_BYTES = 50 * 1024 * 1024;
+const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
-const MAX_PDF_PAGES = 250;
+const MAX_DOCUMENT_UNITS = 250;
+
+const DOCUMENT_FORMAT_LABELS: Record<DocumentFormat, string> = {
+  pdf: "PDF",
+  docx: "DOCX",
+  epub: "EPUB",
+  pptx: "PowerPoint"
+};
+
+const DOCUMENT_UNIT_LABELS: Record<DocumentFormat, string> = {
+  pdf: "page",
+  docx: "section",
+  epub: "chapter",
+  pptx: "slide"
+};
 
 const SCANNED_MESSAGE =
   "This PDF appears image-based. The workspace can translate scanned pages with OCR, but names, seals, and dense tables may still need manual review.";
@@ -62,7 +78,8 @@ const makeRollingContext = (source: string, translation: string, maxLen = 800): 
 
 export default function HomePage() {
   const [theme, setTheme] = useState<ThemePreference>("system");
-  const [inputMode, setInputMode] = useState<InputMode>("pdf");
+  const [inputMode, setInputMode] = useState<InputMode>("document");
+  const [documentFormat, setDocumentFormat] = useState<DocumentFormat>("pdf");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [activeUserApiKey, setActiveUserApiKey] = useState("");
@@ -136,13 +153,15 @@ export default function HomePage() {
         if (!active || !snapshot || snapshot.version !== 1) {
           return;
         }
-        setInputMode(snapshot.inputMode);
+        const restoredFormat = snapshot.documentFormat || "pdf";
+        setInputMode(snapshot.inputMode === "pdf" ? "document" : snapshot.inputMode);
+        setDocumentFormat(restoredFormat);
         setPdfName(snapshot.pdfName);
         setPdfFile(snapshot.pdfFile);
         setPdfPages(snapshot.pdfPages);
         setPdfTotalPages(snapshot.pdfTotalPages);
         setPdfScannedMessage(snapshot.pdfScannedMessage);
-        if (snapshot.pdfFile) {
+        if (snapshot.pdfFile && restoredFormat === "pdf") {
           setPdfObjectUrl(URL.createObjectURL(snapshot.pdfFile));
         }
         setImageName(snapshot.imageName);
@@ -197,7 +216,7 @@ export default function HomePage() {
   }, [pdfObjectUrl]);
 
   const sourceChunks = useMemo(() => {
-    if (inputMode === "pdf") {
+    if (inputMode === "document") {
       return createChunksFromPdfPages(pdfPages);
     }
     if (inputMode === "image") {
@@ -210,25 +229,30 @@ export default function HomePage() {
   const englishText = useMemo(() => normalizeTranslationFootnotes(rawEnglishText), [rawEnglishText]);
   const parsedEnglishText = useMemo(() => parseTranslationText(englishText), [englishText]);
   const sourceLabel = useMemo(() => {
-    if (inputMode === "pdf") {
-      return pdfName || "Uploaded PDF";
+    if (inputMode === "document") {
+      return pdfName || `Uploaded ${DOCUMENT_FORMAT_LABELS[documentFormat]}`;
     }
     if (inputMode === "image") {
       return imageName || "Uploaded image";
     }
     return "Pasted Chinese text";
-  }, [inputMode, pdfName, imageName]);
+  }, [documentFormat, inputMode, pdfName, imageName]);
   const pagesWithSelectableText = useMemo(
-    () => pdfPages.filter((page) => hasSelectableTextInPdfPage(page.text)).length,
-    [pdfPages]
+    () => documentFormat === "pdf" ? pdfPages.filter((page) => hasSelectableTextInPdfPage(page.text)).length : pdfPages.length,
+    [documentFormat, pdfPages]
   );
-  const ocrPageCount = useMemo(() => Math.max(pdfTotalPages - pagesWithSelectableText, 0), [pagesWithSelectableText, pdfTotalPages]);
+  const ocrPageCount = useMemo(
+    () => documentFormat === "pdf" ? Math.max(pdfTotalPages - pagesWithSelectableText, 0) : 0,
+    [documentFormat, pagesWithSelectableText, pdfTotalPages]
+  );
+  const documentFormatLabel = DOCUMENT_FORMAT_LABELS[documentFormat];
+  const documentUnitLabel = DOCUMENT_UNIT_LABELS[documentFormat];
   const hasTranslation = useMemo(
     () => translatedChunks.length > 0 || translationPages.some((page) => page.translatedText.trim()),
     [translatedChunks, translationPages]
   );
   const hasSourceLoaded = useMemo(() => {
-    if (inputMode === "pdf") {
+    if (inputMode === "document") {
       return pdfTotalPages > 0;
     }
     if (inputMode === "image") {
@@ -242,12 +266,20 @@ export default function HomePage() {
     [glossaryEntries]
   );
   const sourceSummary = useMemo(() => {
-    if (inputMode === "pdf") {
+    if (inputMode === "document") {
       if (!pdfTotalPages) {
         return {
-          title: "No PDF loaded yet",
-          detail: "Upload a Chinese PDF to preview pages and translate them in the review workspace.",
-          helper: "Selectable text translates fastest. Image-based pages can fall back to OCR."
+          title: "No document loaded yet",
+          detail: "Upload a Chinese PDF, DOCX, EPUB, or PowerPoint file.",
+          helper: "Scanned PDF pages use OCR. Other document formats preserve their reading or slide order."
+        };
+      }
+
+      if (documentFormat !== "pdf") {
+        return {
+          title: pdfName || `${documentFormatLabel} ready`,
+          detail: `${pdfTotalPages} ${documentUnitLabel}${pdfTotalPages === 1 ? "" : "s"} found · ${pdfPages.length} with readable text`,
+          helper: `${documentFormatLabel} text was extracted locally and is ready for translation.`
         };
       }
 
@@ -288,13 +320,13 @@ export default function HomePage() {
       detail: `${pastedText.length.toLocaleString()} characters · ${sectionCount} section${sectionCount === 1 ? "" : "s"} to translate`,
       helper: "Use the glossary and domain selector before translating if terminology matters."
     };
-  }, [imageDataUrl, imageName, inputMode, ocrPageCount, pagesWithSelectableText, pastedText, pdfName, pdfTotalPages, sourceChunks.length]);
+  }, [documentFormat, documentFormatLabel, documentUnitLabel, imageDataUrl, imageName, inputMode, ocrPageCount, pagesWithSelectableText, pastedText, pdfName, pdfPages.length, pdfTotalPages, sourceChunks.length]);
 
   const translateDisabled =
     processing ||
-    (inputMode === "pdf" ? pdfTotalPages === 0 : inputMode === "image" ? !imageDataUrl : sourceChunks.length === 0);
+    (inputMode === "document" ? pdfTotalPages === 0 : inputMode === "image" ? !imageDataUrl : sourceChunks.length === 0);
   const usingCustomKey = Boolean(activeUserApiKey.trim());
-  const canShowPdfSideBySide = inputMode === "pdf" && Boolean(pdfObjectUrl) && pdfTotalPages > 0;
+  const canShowPdfSideBySide = inputMode === "document" && documentFormat === "pdf" && Boolean(pdfObjectUrl) && pdfTotalPages > 0;
   const canShowImageSideBySide = inputMode === "image" && Boolean(imageDataUrl) && hasTranslation;
   const showResultsPanel = hasSourceLoaded || hasTranslation || processing;
   const showLivePreview = isStreaming && activeView === "english";
@@ -331,6 +363,7 @@ export default function HomePage() {
         version: 1,
         savedAt: Date.now(),
         inputMode,
+        documentFormat,
         pdfName,
         pdfFile,
         pdfPages,
@@ -355,6 +388,7 @@ export default function HomePage() {
     approvedChunkIds,
     canResume,
     domain,
+    documentFormat,
     extractedEntities,
     glossaryEntries,
     imageDataUrl,
@@ -480,6 +514,7 @@ export default function HomePage() {
   };
 
   const resetPdfState = () => {
+    setDocumentFormat("pdf");
     setPdfName(undefined);
     setPdfFile(undefined);
     setPdfPages([]);
@@ -507,28 +542,39 @@ export default function HomePage() {
       return;
     }
 
-    if (file.type !== "application/pdf") {
-      setErrorMessage("Please upload a PDF file.");
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    if (extension === "ppt") {
+      setErrorMessage("Legacy .ppt files are not supported. Save the presentation as .pptx and upload it again.");
       resetPdfState();
       return;
     }
 
-    if (file.size > MAX_PDF_BYTES) {
-      setErrorMessage("PDFs must be 50 MB or smaller.");
+    const format = getDocumentFormat(file);
+    if (!format) {
+      setErrorMessage("Please upload a PDF, DOCX, EPUB, or PowerPoint (.pptx) file.");
       resetPdfState();
       return;
     }
 
-    setInputMode("pdf");
+    if (file.size > MAX_DOCUMENT_BYTES) {
+      setErrorMessage("Documents must be 50 MB or smaller.");
+      resetPdfState();
+      return;
+    }
+
+    setInputMode("document");
+    setDocumentFormat(format);
     setActiveView("original");
     resetImageState();
     setPdfName(file.name);
     setPdfFile(file);
-    replacePdfUrl(URL.createObjectURL(file));
+    replacePdfUrl(format === "pdf" ? URL.createObjectURL(file) : undefined);
     setProgressStep("extracting");
-    setStatusMessage("Extracting text...");
+    setStatusMessage(`Extracting ${DOCUMENT_FORMAT_LABELS[format]} text...`);
 
-    const result = await extractSelectableTextFromPdf(file);
+    const result = format === "pdf"
+      ? await extractSelectableTextFromPdf(file)
+      : await extractStructuredDocument(file, format);
 
     if (result.kind === "error") {
       setPdfPages([]);
@@ -539,11 +585,11 @@ export default function HomePage() {
       return;
     }
 
-    if (result.totalPages > MAX_PDF_PAGES) {
+    if (result.totalPages > MAX_DOCUMENT_UNITS) {
       resetPdfState();
       setStatusMessage("");
       setProgressStep("idle");
-      setErrorMessage(`PDFs are limited to ${MAX_PDF_PAGES} pages per workspace.`);
+      setErrorMessage(`Documents are limited to ${MAX_DOCUMENT_UNITS} pages, chapters, sections, or slides per workspace.`);
       return;
     }
 
@@ -717,7 +763,7 @@ export default function HomePage() {
       { maxRetries: 2, validateEnglish: false }
     );
 
-  const handleTranslatePdfPageByPage = async (resume: boolean) => {
+  const handleTranslateDocumentByUnit = async (resume: boolean) => {
     const pagesToTranslate = pdfPages;
     const completedChunks: TranslationChunk[] = resume ? translatedChunks.filter((chunk) => chunk.translatedEnglish.trim()) : [];
     const completedPages: TranslationPage[] = resume
@@ -733,9 +779,9 @@ export default function HomePage() {
     let rollingContext = lastCompletedChunk
       ? makeRollingContext(lastCompletedChunk.originalChinese, lastCompletedChunk.translatedEnglish)
       : "";
-    const pagesNeedingOcr = pagesToTranslate
+    const pagesNeedingOcr = documentFormat === "pdf" ? pagesToTranslate
       .filter((page) => !hasSelectableTextInPdfPage(page.text) && !completedPageNumbers.has(page.pageNumber))
-      .map((page) => page.pageNumber);
+      .map((page) => page.pageNumber) : [];
 
     setTotalUnits(pagesToTranslate.length);
     setCompletedUnits(completedPages.length);
@@ -755,10 +801,11 @@ export default function HomePage() {
         continue;
       }
       const pageChunks = createChunksFromSinglePdfPage(page);
-      const isOcrPage = pageChunks.length === 0;
+      const isOcrPage = documentFormat === "pdf" && pageChunks.length === 0;
+      const unitPosition = `${documentUnitLabel} ${page.pageNumber} of ${pdfTotalPages}`;
 
       setStatusMessage(
-        `${isOcrPage ? "Running OCR on" : "Translating"} page ${page.pageNumber} of ${pdfTotalPages}...`
+        `${isOcrPage ? "Running OCR on" : "Translating"} ${unitPosition}...`
       );
       setLiveText("");
       setIsStreaming(true);
@@ -770,7 +817,7 @@ export default function HomePage() {
           if (!imageDataUrl) {
             throw new Error(`Unable to prepare OCR image for page ${page.pageNumber}.`);
           }
-          setStatusMessage(`Transcribing page ${page.pageNumber} of ${pdfTotalPages}...`);
+          setStatusMessage(`Transcribing ${unitPosition}...`);
           const ocrResult = await transcribeImageWithRetry({
             id: `pdf-ocr-p${page.pageNumber}`,
             pageNumber: page.pageNumber,
@@ -787,7 +834,7 @@ export default function HomePage() {
           ].sort((left, right) => left.pageNumber - right.pageNumber));
         }
 
-        setStatusMessage(`Translating page ${page.pageNumber} of ${pdfTotalPages}...`);
+        setStatusMessage(`Translating ${unitPosition}...`);
         const sourceChunk: TranslationChunk = {
           id: `pdf-ocr-p${page.pageNumber}`,
           pageNumber: page.pageNumber,
@@ -918,8 +965,8 @@ export default function HomePage() {
     const resume = canResume && !translationStale;
     setErrorMessage("");
 
-    if (inputMode === "pdf" && pdfTotalPages === 0) {
-      setErrorMessage("Upload a PDF to begin.");
+    if (inputMode === "document" && pdfTotalPages === 0) {
+      setErrorMessage("Upload a document to begin.");
       return;
     }
     if (inputMode === "image" && !imageDataUrl) {
@@ -950,7 +997,7 @@ export default function HomePage() {
 
     await new Promise((resolve) => setTimeout(resolve, 120));
 
-    // Extract entities for text mode (PDF already extracted on upload).
+    // Extract entities for text mode (uploaded documents are extracted on upload).
     if (inputMode === "text" && sourceChunks.length > 0) {
       const sampleText = sourceChunks.map((c) => c.originalChinese).join("\n\n");
       const heuristics = extractEntitiesHeuristic(sampleText);
@@ -961,8 +1008,8 @@ export default function HomePage() {
     try {
       setProgressStep("translating");
 
-      if (inputMode === "pdf") {
-        await handleTranslatePdfPageByPage(resume);
+      if (inputMode === "document") {
+        await handleTranslateDocumentByUnit(resume);
       } else if (inputMode === "image") {
         await handleTranslateImage(resume);
       } else {
@@ -1046,6 +1093,7 @@ export default function HomePage() {
 
   const handleReset = () => {
     abortControllerRef.current?.abort();
+    setInputMode("document");
     resetPdfState();
     resetImageState();
     setPastedText("");
@@ -1158,7 +1206,7 @@ export default function HomePage() {
                   </div>
 
                   <div className="mt-4">
-                    {inputMode === "pdf" ? (
+                    {inputMode === "document" ? (
                       <FileUpload fileName={pdfName} onFileSelect={handleFileSelect} />
                     ) : inputMode === "image" ? (
                       <ImageUpload fileName={imageName} onFileSelect={handleImageSelect} />
@@ -1179,9 +1227,11 @@ export default function HomePage() {
                 <div className="mt-3 grid gap-2 border-t border-slate-200 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
                   <div className="flex items-center justify-between gap-3">
                     <span>Input</span>
-                    <span className="font-medium capitalize text-slate-700 dark:text-slate-200">{inputMode}</span>
+                    <span className="font-medium text-slate-700 dark:text-slate-200">
+                      {inputMode === "document" ? documentFormatLabel : inputMode === "image" ? "Image" : "Pasted text"}
+                    </span>
                   </div>
-                  {inputMode === "pdf" && pdfTotalPages > 0 ? (
+                  {inputMode === "document" && documentFormat === "pdf" && pdfTotalPages > 0 ? (
                     <div className="flex items-center justify-between gap-3">
                       <span>OCR pages</span>
                       <span className="font-medium text-slate-700 dark:text-slate-200">{ocrPageCount}</span>
@@ -1300,7 +1350,7 @@ export default function HomePage() {
                         </div>
                         <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
                           {processing && totalUnits > 0
-                            ? `Working through ${Math.min(completedUnits, totalUnits)} of ${totalUnits} ${inputMode === "pdf" ? "pages" : inputMode === "image" ? "image steps" : "sections"}`
+                            ? `Working through ${Math.min(completedUnits, totalUnits)} of ${totalUnits} ${inputMode === "document" ? `${documentUnitLabel}s` : inputMode === "image" ? "image steps" : "sections"}`
                             : translationStale
                               ? "Update the translation before copying or exporting."
                               : `${sourceLabel}${usedModel ? ` · ${usedModel}` : ""}`}
@@ -1429,31 +1479,40 @@ export default function HomePage() {
                         <p className="text-sm text-slate-600 dark:text-slate-300">No image loaded.</p>
                       )}
                     </article>
-                  ) : inputMode === "pdf" ? (
-                    <article className="reader-card p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="eyebrow">Source PDF</p>
-                          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                            {pdfName ? `${pdfName} · ${pdfTotalPages} pages` : "Upload a PDF to preview it here."}
-                          </p>
+                  ) : inputMode === "document" ? (
+                    documentFormat === "pdf" ? (
+                      <article className="reader-card p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="eyebrow">Source PDF</p>
+                            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                              {pdfName ? `${pdfName} · ${pdfTotalPages} pages` : "Upload a PDF to preview it here."}
+                            </p>
+                          </div>
+                          {ocrPageCount > 0 ? (
+                            <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                              {ocrPageCount} OCR page{ocrPageCount === 1 ? "" : "s"} detected
+                            </span>
+                          ) : null}
                         </div>
-                        {ocrPageCount > 0 ? (
-                          <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-                            {ocrPageCount} OCR page{ocrPageCount === 1 ? "" : "s"} detected
-                          </span>
-                        ) : null}
-                      </div>
-                      {pdfObjectUrl ? (
-                        <iframe
-                          src={`${pdfObjectUrl}#page=1&zoom=page-width`}
-                          title="Source PDF preview"
-                          className="mt-4 h-[72vh] min-h-[560px] w-full rounded-xl border border-slate-200 bg-white dark:border-slate-800"
-                        />
-                      ) : (
-                        <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">No PDF loaded.</p>
-                      )}
-                    </article>
+                        {pdfObjectUrl ? (
+                          <iframe
+                            src={`${pdfObjectUrl}#page=1&zoom=page-width`}
+                            title="Source PDF preview"
+                            className="mt-4 h-[72vh] min-h-[560px] w-full rounded-xl border border-slate-200 bg-white dark:border-slate-800"
+                          />
+                        ) : (
+                          <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">No PDF loaded.</p>
+                        )}
+                      </article>
+                    ) : (
+                      <DocumentSourceView
+                        pages={pdfPages}
+                        format={documentFormat}
+                        fontSize={documentFontSize}
+                        readingWidthClass={readingWidthClass}
+                      />
+                    )
                   ) : (
                     <article className={`reader-card mx-auto w-full ${readingWidthClass} p-6 sm:p-7`}>
                       <p className="eyebrow mb-4">Original Chinese</p>
@@ -1480,43 +1539,14 @@ export default function HomePage() {
                             <p className="text-sm text-slate-600 dark:text-slate-300">No image loaded.</p>
                           )}
                         </article>
-                      ) : inputMode === "pdf" ? (
-                        <div className="space-y-4">
-                          {pdfPages.map((page) => {
-                            const savedPage = translationPages.find((entry) => entry.pageNumber === page.pageNumber);
-                            const originalText = page.text.trim() || savedPage?.originalText.trim() || "";
-
-                            return (
-                              <article
-                                key={`orig-page-${page.pageNumber}`}
-                                className={`reader-card mx-auto w-full ${readingWidthClass} p-5 sm:p-6`}
-                              >
-                                <div className="mb-3 flex flex-wrap items-center gap-2">
-                                  <p className="eyebrow">
-                                    第 {page.pageNumber} 頁 · Page {page.pageNumber}
-                                  </p>
-                                  {!page.text.trim() ? (
-                                    <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-                                      OCR text
-                                    </span>
-                                  ) : null}
-                                </div>
-                                <div
-                                  className="text-slate-800 dark:text-slate-100"
-                                  style={{ fontSize: `${documentFontSize}px` }}
-                                >
-                                  {originalText ? (
-                                    <ChineseSourceBody text={originalText} />
-                                  ) : (
-                                    <p className="cn-text text-sm text-slate-500 dark:text-slate-400">
-                                      此頁未偵測到可選取的文字，翻譯時會改用 OCR。
-                                    </p>
-                                  )}
-                                </div>
-                              </article>
-                            );
-                          })}
-                        </div>
+                      ) : inputMode === "document" ? (
+                        <DocumentSourceView
+                          pages={pdfPages}
+                          translationPages={translationPages}
+                          format={documentFormat}
+                          fontSize={documentFontSize}
+                          readingWidthClass={readingWidthClass}
+                        />
                       ) : (
                         <article className={`reader-card mx-auto w-full ${readingWidthClass} p-6 sm:p-7`}>
                           <p className="eyebrow mb-4">Original Chinese</p>
@@ -1616,7 +1646,7 @@ export default function HomePage() {
                   <p className="eyebrow">Workspace</p>
                   <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-slate-50">Load a source to begin</h2>
                   <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                    Upload a PDF, image, or paste Chinese text. The preview and translation results will stay focused here.
+                    Upload a PDF, DOCX, EPUB, PowerPoint, or image—or paste Chinese text directly.
                   </p>
                 </div>
               </section>

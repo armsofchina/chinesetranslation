@@ -1,6 +1,6 @@
 "use client";
 
-export type InputMode = "pdf" | "text" | "image";
+export type InputMode = "document" | "text" | "image";
 
 type InputModeTabsProps = {
   value: InputMode;
@@ -8,7 +8,7 @@ type InputModeTabsProps = {
 };
 
 const OPTIONS: Array<{ id: InputMode; label: string }> = [
-  { id: "pdf", label: "PDF" },
+  { id: "document", label: "Documents" },
   { id: "image", label: "Image" },
   { id: "text", label: "Paste Text" }
 ];

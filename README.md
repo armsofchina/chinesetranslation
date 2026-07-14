@@ -1,10 +1,12 @@
-# Chinese PDF/Text Translator
+# Chinese Document Translator
 
 A polished Next.js MVP for translating Traditional and Simplified Chinese text into clean English.
 
 ## Features
 
-- Upload Chinese PDF files and extract selectable text using PDF.js
+- Upload PDF, DOCX, EPUB, and PowerPoint (`.pptx`) files
+- Preserve DOCX section order, EPUB reading-spine order, and PowerPoint slide order
+- Extract selectable PDF text using PDF.js
 - OCR + translate scanned/image-only PDF pages using PPQ vision models
 - Upload images (PNG/JPG/WEBP/BMP/TIFF) and translate non-selectable text
 - Paste Chinese text directly and translate without uploading files
@@ -21,6 +23,7 @@ A polished Next.js MVP for translating Traditional and Simplified Chinese text i
 - React + TypeScript
 - Tailwind CSS (`darkMode: "class"`)
 - `pdfjs-dist` for PDF text extraction
+- `jszip` for DOCX, EPUB, and PPTX extraction
 - PPQ OpenAI-compatible chat completions API
 - `jspdf` for English PDF export
 
@@ -78,5 +81,6 @@ npm run dev
 - Never expose `PPQ_API_KEY` via `NEXT_PUBLIC_*` variables.
 - Do not log API keys in server logs or client logs.
 - Use HTTPS in production.
-- Uploaded files are handled in-memory for extraction and are not persisted by the app.
+- Uploaded files and workspace progress are stored locally in IndexedDB for recovery and are not uploaded by the extraction pipeline.
+- Legacy binary `.ppt` files must be saved as `.pptx` before upload.
 # chinesetranslation
