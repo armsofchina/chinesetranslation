@@ -16,12 +16,23 @@ export type OpenRouterSession = {
   connectedAt: number;
 };
 
+export class OpenRouterSessionConfigurationError extends Error {
+  constructor() {
+    super("OPENROUTER_SESSION_SECRET must be configured with at least 32 characters in production.");
+    this.name = "OpenRouterSessionConfigurationError";
+  }
+}
+
 const getSessionKey = (): Buffer => {
   const secret = process.env.OPENROUTER_SESSION_SECRET?.trim() || process.env.APP_SESSION_SECRET?.trim();
-  if (!secret && process.env.NODE_ENV === "production") {
-    throw new Error("OPENROUTER_SESSION_SECRET must be configured in production.");
+  if (process.env.NODE_ENV === "production" && (!secret || secret.length < 32)) {
+    throw new OpenRouterSessionConfigurationError();
   }
   return createHash("sha256").update(secret || "translation-vibe-development-only-secret").digest();
+};
+
+export const assertOpenRouterSessionConfigured = (): void => {
+  getSessionKey();
 };
 
 export const sealOpenRouterSession = (session: OpenRouterSession): string => {

@@ -5,6 +5,7 @@ import {
   getOpenRouterSessionCookieOptions,
   OPENROUTER_PKCE_COOKIE,
   OPENROUTER_SESSION_COOKIE,
+  OpenRouterSessionConfigurationError,
   parseOpenRouterPkceSession,
   sealOpenRouterSession
 } from "@/lib/openRouterSession";
@@ -68,8 +69,9 @@ export async function GET(request: NextRequest) {
     return response;
   }
 
+  let exchangeResponse: Response;
   try {
-    const exchangeResponse = await fetch(getOpenRouterKeyExchangeUrl(), {
+    exchangeResponse = await fetch(getOpenRouterKeyExchangeUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -79,12 +81,31 @@ export async function GET(request: NextRequest) {
       }),
       cache: "no-store"
     });
-    const payload = await exchangeResponse.json().catch(() => null);
-    const apiKey = typeof payload?.key === "string" ? payload.key.trim() : "";
-    if (!exchangeResponse.ok || !apiKey) {
-      throw new Error("OpenRouter key exchange failed.");
-    }
+  } catch (error) {
+    console.error(
+      "OpenRouter OAuth key exchange request failed:",
+      error instanceof Error ? error.message : "Unknown network error."
+    );
+    const response = redirectToApp(baseUrl, "error", "key_exchange_unavailable");
+    response.cookies.set(OPENROUTER_PKCE_COOKIE, "", getOpenRouterPkceCookieOptions(0));
+    return response;
+  }
 
+  const payload = await exchangeResponse.json().catch(() => null);
+  const apiKey = typeof payload?.key === "string" ? payload.key.trim() : "";
+  if (!exchangeResponse.ok || !apiKey) {
+    const providerMessage = typeof payload?.error?.message === "string"
+      ? payload.error.message
+      : typeof payload?.message === "string"
+        ? payload.message
+        : "No error detail returned.";
+    console.error(`OpenRouter OAuth key exchange rejected (${exchangeResponse.status}): ${providerMessage}`);
+    const response = redirectToApp(baseUrl, "error", "key_exchange_rejected");
+    response.cookies.set(OPENROUTER_PKCE_COOKIE, "", getOpenRouterPkceCookieOptions(0));
+    return response;
+  }
+
+  try {
     return createSessionResponse(
       baseUrl,
       apiKey,
@@ -92,10 +113,13 @@ export async function GET(request: NextRequest) {
     );
   } catch (error) {
     console.error(
-      "OpenRouter OAuth key exchange failed:",
-      error instanceof Error ? error.message : "Unknown key exchange error."
+      "OpenRouter OAuth session creation failed:",
+      error instanceof Error ? error.message : "Unknown session error."
     );
-    const response = redirectToApp(baseUrl, "error", "key_exchange_failed");
+    const errorCode = error instanceof OpenRouterSessionConfigurationError
+      ? "session_configuration"
+      : "session_storage_failed";
+    const response = redirectToApp(baseUrl, "error", errorCode);
     response.cookies.set(OPENROUTER_PKCE_COOKIE, "", getOpenRouterPkceCookieOptions(0));
     return response;
   }

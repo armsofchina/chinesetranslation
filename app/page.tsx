@@ -217,7 +217,11 @@ export default function HomePage() {
       const errorMessages: Record<string, string> = {
         invalid_site_url: "OpenRouter needs a valid HTTPS NEXT_PUBLIC_SITE_URL that matches this site.",
         session_expired: "OpenRouter sign-in expired. Please try connecting again.",
-        key_exchange_failed: "OpenRouter could not complete sign-in. Please try again.",
+        session_configuration: "OpenRouter sign-in needs an OPENROUTER_SESSION_SECRET of at least 32 characters on this server.",
+        key_exchange_unavailable: "OpenRouter could not be reached to complete sign-in. Please try again.",
+        key_exchange_rejected: "OpenRouter rejected this sign-in attempt. Start a new connection and authorize it again.",
+        key_exchange_failed: "OpenRouter could not complete sign-in. Please start a new connection.",
+        session_storage_failed: "OpenRouter connected, but the encrypted session could not be created.",
         storage_failed: "This browser blocked local storage, so the OpenRouter connection could not be saved."
       };
       setToastMessage(errorMessages[openRouterError || ""] || "OpenRouter is not configured correctly on this server.");
