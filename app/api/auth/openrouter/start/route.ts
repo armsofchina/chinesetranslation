@@ -10,9 +10,7 @@ import {
   createPkceVerifier,
   getOpenRouterPkceCookieOptions,
   OPENROUTER_PKCE_COOKIE,
-  serializeOpenRouterPkceSession,
-  assertOpenRouterSessionConfigured,
-  OpenRouterSessionConfigurationError
+  serializeOpenRouterPkceSession
 } from "@/lib/openRouterSession";
 
 export const runtime = "nodejs";
@@ -21,9 +19,6 @@ export const dynamic = "force-dynamic";
 const getConfigurationErrorCode = (error: unknown) => {
   if (error instanceof OpenRouterOAuthConfigurationError) {
     return error.code;
-  }
-  if (error instanceof OpenRouterSessionConfigurationError) {
-    return "session_configuration";
   }
   return "configuration_error";
 };
@@ -42,7 +37,6 @@ const redirectToConfigurationError = (request: NextRequest, error: unknown) => {
 
 export async function GET(request: NextRequest) {
   try {
-    assertOpenRouterSessionConfigured();
     const verifier = createPkceVerifier();
     const challenge = createPkceChallenge(verifier);
     const baseUrl = getAppBaseUrl(getRequestOrigin(request));

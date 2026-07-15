@@ -4,7 +4,11 @@ import { extractEntitiesWithLlm } from "@/lib/extractEntities";
 import { TranslationDomain } from "@/lib/prompts";
 import { getMissingProviderKeyMessage, resolveProviderContext } from "@/lib/providerServer";
 import { checkRateLimit, getRequestClientKey } from "@/lib/rateLimit";
-import { OPENROUTER_SESSION_COOKIE, parseOpenRouterSession } from "@/lib/openRouterSession";
+import {
+  OPENROUTER_SESSION_COOKIE,
+  OPENROUTER_SESSION_KEY_COOKIE,
+  parseOpenRouterSession
+} from "@/lib/openRouterSession";
 
 export const runtime = "nodejs";
 
@@ -35,7 +39,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (providerId === "openrouter" && !body.userOpenRouterApiKey) {
-      body.userOpenRouterApiKey = parseOpenRouterSession(request.cookies.get(OPENROUTER_SESSION_COOKIE)?.value)?.apiKey;
+      body.userOpenRouterApiKey = parseOpenRouterSession(
+        request.cookies.get(OPENROUTER_SESSION_COOKIE)?.value,
+        request.cookies.get(OPENROUTER_SESSION_KEY_COOKIE)?.value
+      )?.apiKey;
     }
     const provider = resolveProviderContext(body || {});
     if (!provider) {

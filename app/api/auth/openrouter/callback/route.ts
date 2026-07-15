@@ -3,9 +3,10 @@ import { getAppBaseUrl, getOpenRouterKeyExchangeUrl, getRequestOrigin } from "@/
 import {
   getOpenRouterPkceCookieOptions,
   getOpenRouterSessionCookieOptions,
+  getOpenRouterSessionKeyCookieOptions,
   OPENROUTER_PKCE_COOKIE,
   OPENROUTER_SESSION_COOKIE,
-  OpenRouterSessionConfigurationError,
+  OPENROUTER_SESSION_KEY_COOKIE,
   parseOpenRouterPkceSession,
   sealOpenRouterSession
 } from "@/lib/openRouterSession";
@@ -47,7 +48,13 @@ const createSessionResponse = (
   connectedUrl.searchParams.set("settings", "connections");
   const response = NextResponse.redirect(connectedUrl);
   response.headers.set("Cache-Control", "no-store, max-age=0");
-  response.cookies.set(OPENROUTER_SESSION_COOKIE, sealOpenRouterSession({ apiKey, userId, connectedAt: Date.now() }), getOpenRouterSessionCookieOptions());
+  const sealedSession = sealOpenRouterSession({ apiKey, userId, connectedAt: Date.now() });
+  response.cookies.set(OPENROUTER_SESSION_COOKIE, sealedSession.value, getOpenRouterSessionCookieOptions());
+  if (sealedSession.browserKey) {
+    response.cookies.set(OPENROUTER_SESSION_KEY_COOKIE, sealedSession.browserKey, getOpenRouterSessionKeyCookieOptions());
+  } else {
+    response.cookies.set(OPENROUTER_SESSION_KEY_COOKIE, "", getOpenRouterSessionKeyCookieOptions(0));
+  }
   response.cookies.set(OPENROUTER_PKCE_COOKIE, "", getOpenRouterPkceCookieOptions(0));
   return response;
 };
@@ -121,10 +128,7 @@ export async function GET(request: NextRequest) {
       "OpenRouter OAuth session creation failed:",
       error instanceof Error ? error.message : "Unknown session error."
     );
-    const errorCode = error instanceof OpenRouterSessionConfigurationError
-      ? "session_configuration"
-      : "session_storage_failed";
-    const response = redirectToApp(baseUrl, "error", errorCode);
+    const response = redirectToApp(baseUrl, "error", "session_storage_failed");
     response.cookies.set(OPENROUTER_PKCE_COOKIE, "", getOpenRouterPkceCookieOptions(0));
     return response;
   }

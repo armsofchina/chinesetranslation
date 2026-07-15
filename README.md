@@ -56,7 +56,7 @@ OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openrouter/free
 OPENROUTER_VISION_MODEL=openrouter/free
 OPENROUTER_APP_NAME=Translation Vibe
-OPENROUTER_SESSION_SECRET=replace-with-at-least-32-random-characters
+OPENROUTER_SESSION_SECRET=
 OPENROUTER_ALLOWED_MODELS=
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
@@ -75,7 +75,7 @@ npm run dev
 
 - PPQ supports a shared server `PPQ_API_KEY` or an optional personal key entered in settings.
 - OpenRouter supports a shared server `OPENROUTER_API_KEY` or one-click account connection using OAuth PKCE.
-- Connected OpenRouter keys are encrypted into an HttpOnly, Secure production session cookie and are not exposed to page JavaScript. Configure `OPENROUTER_SESSION_SECRET` in production.
+- Connected OpenRouter keys are encrypted into HttpOnly, Secure production session cookies and are not exposed to page JavaScript. `OPENROUTER_SESSION_SECRET` is optional; without it, the app automatically creates a browser-specific encryption key so one-click connection still works.
 - The OpenRouter model selector defaults to `openrouter/free`, lists pinned `:free` models first, and clearly separates standard models that may use account credits.
 - Model choices are saved with the local workspace. OCR uses `OPENROUTER_VISION_MODEL` or the automatic free vision route so text-only model selections do not break scanned documents.
 - The selected provider is saved with the local workspace and used for translation, OCR, and glossary extraction.
@@ -91,7 +91,7 @@ npm run dev
 - Never expose `PPQ_API_KEY` via `NEXT_PUBLIC_*` variables.
 - Do not log API keys in server logs or client logs.
 - Use HTTPS in production.
-- Set a unique, high-entropy `OPENROUTER_SESSION_SECRET`; rotating it invalidates existing OpenRouter connections.
+- For stronger protection across browser-cookie backups, optionally set a unique, high-entropy `OPENROUTER_SESSION_SECRET`; rotating it invalidates server-keyed OpenRouter connections. One-click connection also works without it.
 - Use `OPENROUTER_ALLOWED_MODELS` as a comma-separated allowlist when deployments need model/cost controls.
 - Translation requests have schema, size, rate, and two-minute upstream timeout limits. Multi-instance deployments should replace the in-process rate limiter with a shared store.
 - Uploaded files and workspace progress are stored locally in IndexedDB for recovery and are not uploaded by the extraction pipeline.

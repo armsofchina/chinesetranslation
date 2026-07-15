@@ -15,7 +15,11 @@ import {
 import { checkRateLimit, getRequestClientKey } from "@/lib/rateLimit";
 import { buildSegmentQaReport } from "@/lib/segmentQa";
 import { validateStreamRequest } from "@/lib/translateRequest";
-import { OPENROUTER_SESSION_COOKIE, parseOpenRouterSession } from "@/lib/openRouterSession";
+import {
+  OPENROUTER_SESSION_COOKIE,
+  OPENROUTER_SESSION_KEY_COOKIE,
+  parseOpenRouterSession
+} from "@/lib/openRouterSession";
 
 export const runtime = "nodejs";
 
@@ -49,7 +53,10 @@ export async function POST(request: NextRequest) {
   }
   const { chunk, imageTask } = body;
   if (body.provider === "openrouter" && !body.userOpenRouterApiKey) {
-    body.userOpenRouterApiKey = parseOpenRouterSession(request.cookies.get(OPENROUTER_SESSION_COOKIE)?.value)?.apiKey;
+    body.userOpenRouterApiKey = parseOpenRouterSession(
+      request.cookies.get(OPENROUTER_SESSION_COOKIE)?.value,
+      request.cookies.get(OPENROUTER_SESSION_KEY_COOKIE)?.value
+    )?.apiKey;
   }
 
   const providerId = normalizeAiProvider(body.provider);
