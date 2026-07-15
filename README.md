@@ -69,6 +69,8 @@ npm run dev
 - PPQ supports a shared server `PPQ_API_KEY` or an optional personal key entered in settings.
 - OpenRouter supports a shared server `OPENROUTER_API_KEY` or one-click account connection using OAuth PKCE.
 - Connected OpenRouter keys are stored in the user's browser local storage and sent with OpenRouter translation requests.
+- The OpenRouter model selector defaults to `openrouter/free`, lists pinned `:free` models first, and clearly separates standard models that may use account credits.
+- Model choices are saved with the local workspace. OCR uses `OPENROUTER_VISION_MODEL` or the automatic free vision route so text-only model selections do not break scanned documents.
 - The selected provider is saved with the local workspace and used for translation, OCR, and glossary extraction.
 - Personal PPQ keys are saved in browser localStorage only when "Remember my key on this device" is checked.
 - If no key is available, API returns:

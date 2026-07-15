@@ -53,7 +53,7 @@ export const resolveProviderContext = (
         process.env.OPENROUTER_CHAT_COMPLETIONS_URL?.trim() ||
         "https://openrouter.ai/api/v1/chat/completions",
       model,
-      visionModel: process.env.OPENROUTER_VISION_MODEL?.trim() || model,
+      visionModel: process.env.OPENROUTER_VISION_MODEL?.trim() || "openrouter/free",
       headers: getOpenRouterHeaders()
     };
   }

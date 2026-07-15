@@ -1,5 +1,6 @@
 export const OPENROUTER_API_KEY_STORAGE = "translator-openrouter-oauth-key";
 export const OPENROUTER_CONNECTION_STORAGE = "translator-openrouter-oauth-connection";
+export const OPENROUTER_MODEL_STORAGE = "translator-openrouter-model";
 
 export type OpenRouterBrowserConnection = {
   userId?: string;

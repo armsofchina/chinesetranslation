@@ -28,8 +28,13 @@ import { AiProviderId, normalizeAiProvider } from "@/lib/aiProviders";
 import {
   OPENROUTER_API_KEY_STORAGE,
   OPENROUTER_CONNECTION_STORAGE,
+  OPENROUTER_MODEL_STORAGE,
   parseOpenRouterBrowserConnection
 } from "@/lib/openRouterBrowser";
+import {
+  normalizeOpenRouterModel,
+  OPENROUTER_AUTO_FREE_MODEL
+} from "@/lib/openRouterModels";
 import { downloadBilingualHtml } from "@/lib/exportHtml";
 import { downloadEnglishPdf } from "@/lib/exportPdf";
 import { downloadTxt } from "@/lib/exportTxt";
@@ -102,6 +107,7 @@ export default function HomePage() {
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [activeUserApiKey, setActiveUserApiKey] = useState("");
   const [openRouterApiKey, setOpenRouterApiKey] = useState("");
+  const [openRouterModel, setOpenRouterModel] = useState(OPENROUTER_AUTO_FREE_MODEL);
   const [rememberKey, setRememberKey] = useState(false);
   const [openRouterConnection, setOpenRouterConnection] = useState<{
     connected: boolean;
@@ -179,6 +185,7 @@ export default function HomePage() {
       loading: false,
       userId: savedOpenRouterConnection?.userId
     });
+    setOpenRouterModel(normalizeOpenRouterModel(window.localStorage.getItem(OPENROUTER_MODEL_STORAGE)));
     setProvider(normalizeAiProvider(window.localStorage.getItem(PROVIDER_STORAGE)));
   }, []);
 
@@ -236,6 +243,11 @@ export default function HomePage() {
         if (restoredProvider) {
           setProvider(restoredProvider);
           window.localStorage.setItem(PROVIDER_STORAGE, restoredProvider);
+        }
+        if (snapshot.openRouterModel) {
+          const restoredOpenRouterModel = normalizeOpenRouterModel(snapshot.openRouterModel);
+          setOpenRouterModel(restoredOpenRouterModel);
+          window.localStorage.setItem(OPENROUTER_MODEL_STORAGE, restoredOpenRouterModel);
         }
         setInputMode(snapshot.inputMode === "pdf" ? "document" : snapshot.inputMode);
         setDocumentFormat(restoredFormat);
@@ -515,6 +527,7 @@ export default function HomePage() {
         version: 1,
         savedAt: Date.now(),
         provider,
+        openRouterModel,
         inputMode,
         documentFormat,
         documentRangeStart,
@@ -551,6 +564,7 @@ export default function HomePage() {
     imageDataUrl,
     imageName,
     inputMode,
+    openRouterModel,
     pastedText,
     pdfFile,
     pdfName,
@@ -866,6 +880,17 @@ export default function HomePage() {
     markTranslationStale();
   };
 
+  const handleOpenRouterModelChange = (nextModel: string) => {
+    const normalizedModel = normalizeOpenRouterModel(nextModel);
+    if (normalizedModel === openRouterModel) {
+      return;
+    }
+    setOpenRouterModel(normalizedModel);
+    window.localStorage.setItem(OPENROUTER_MODEL_STORAGE, normalizedModel);
+    setErrorMessage("");
+    markTranslationStale();
+  };
+
   const handleDisconnectOpenRouter = () => {
     window.localStorage.removeItem(OPENROUTER_API_KEY_STORAGE);
     window.localStorage.removeItem(OPENROUTER_CONNECTION_STORAGE);
@@ -888,6 +913,7 @@ export default function HomePage() {
           text,
           domain,
           provider,
+          model: provider === "openrouter" ? openRouterModel : undefined,
           userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
           userOpenRouterApiKey: provider === "openrouter" ? openRouterApiKey || undefined : undefined
         })
@@ -928,6 +954,7 @@ export default function HomePage() {
           {
             chunk,
             provider,
+            model: provider === "openrouter" ? openRouterModel : undefined,
             userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
             userOpenRouterApiKey: provider === "openrouter" ? openRouterApiKey || undefined : undefined,
             domain,
@@ -952,6 +979,7 @@ export default function HomePage() {
           {
             imageTask: { ...imageTask, mode: "ocr" },
             provider,
+            model: provider === "openrouter" ? openRouterModel : undefined,
             userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
             userOpenRouterApiKey: provider === "openrouter" ? openRouterApiKey || undefined : undefined,
             temperature: Math.min(0.1, attempt * 0.05)
@@ -1900,7 +1928,9 @@ export default function HomePage() {
         openRouterConnected={openRouterConnection.connected}
         openRouterLoading={openRouterConnection.loading}
         openRouterUserId={openRouterConnection.userId}
+        openRouterModel={openRouterModel}
         onProviderChange={handleProviderChange}
+        onOpenRouterModelChange={handleOpenRouterModelChange}
         onApiKeyDraftChange={setApiKeyDraft}
         onRememberKeyChange={setRememberKey}
         onSave={handleSaveApiKey}

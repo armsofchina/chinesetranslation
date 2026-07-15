@@ -14,6 +14,7 @@ export type WorkspaceSnapshot = {
   version: 1;
   savedAt: number;
   provider?: AiProviderId;
+  openRouterModel?: string;
   inputMode: "document" | "pdf" | "image" | "text";
   documentFormat?: DocumentFormat;
   documentRangeStart?: number;
