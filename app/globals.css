@@ -63,6 +63,14 @@ textarea {
   @apply bg-sky-200 text-slate-900 dark:bg-sky-700 dark:text-slate-100;
 }
 
+.search-highlight {
+  @apply rounded-sm bg-amber-200 px-0.5 text-inherit dark:bg-amber-500/40;
+}
+
+.search-highlight-active {
+  @apply bg-amber-300 outline outline-2 outline-offset-2 outline-sky-500 dark:bg-amber-400/70;
+}
+
 @layer components {
   .workspace-panel {
     @apply rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/80;

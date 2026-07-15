@@ -13,6 +13,7 @@ A polished Next.js MVP for translating Traditional and Simplified Chinese text i
 - Translate through PPQ using a secure backend route
 - Use default server API key or optional user-provided PPQ key
 - Switch between Original Chinese, English Translation, and Side-by-side views
+- Jump directly to a page, section, chapter, or slide and search Chinese and English side-by-side text with highlighted match navigation
 - Copy full English translation in one click
 - Download translation as TXT or PDF
 - Light, dark, and system theme support with local preference persistence

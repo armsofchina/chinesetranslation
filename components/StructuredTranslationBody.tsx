@@ -1,13 +1,15 @@
 "use client";
 
 import { parseStructuredBlocks } from "@/lib/structuredBlocks";
+import SearchHighlightedText from "@/components/SearchHighlightedText";
 
 type StructuredTranslationBodyProps = {
   paragraphs: string[];
   compact?: boolean;
+  highlightQuery?: string;
 };
 
-export default function StructuredTranslationBody({ paragraphs, compact = false }: StructuredTranslationBodyProps) {
+export default function StructuredTranslationBody({ paragraphs, compact = false, highlightQuery }: StructuredTranslationBodyProps) {
   const blocks = parseStructuredBlocks(paragraphs);
   const paragraphSpacing = compact ? "mb-3" : "mb-5";
   const sectionSpacing = compact ? "mb-4" : "mb-6";
@@ -30,7 +32,7 @@ export default function StructuredTranslationBody({ paragraphs, compact = false 
                         key={`header-${headerIndex + 1}`}
                         className="border-b border-slate-200 px-3 py-2 font-semibold text-slate-800 dark:border-slate-700 dark:text-slate-100"
                       >
-                        {header || `Column ${headerIndex + 1}`}
+                        <SearchHighlightedText text={header || `Column ${headerIndex + 1}`} query={highlightQuery} />
                       </th>
                     ))}
                   </tr>
@@ -44,7 +46,9 @@ export default function StructuredTranslationBody({ paragraphs, compact = false 
                             key={`cell-${rowIndex + 1}-${cellIndex + 1}`}
                             className="border-b border-slate-200 px-3 py-2 align-top text-slate-700 dark:border-slate-800 dark:text-slate-200"
                           >
-                            <span className="whitespace-pre-wrap break-words">{cell}</span>
+                            <span className="whitespace-pre-wrap break-words">
+                              <SearchHighlightedText text={cell} query={highlightQuery} />
+                            </span>
                           </td>
                         ))}
                       </tr>
@@ -72,7 +76,7 @@ export default function StructuredTranslationBody({ paragraphs, compact = false 
                 {block.kind === "chart" ? "Chart Data" : "Structured Table Data"}
               </p>
               <pre className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 p-3 font-mono text-xs leading-6 text-slate-700 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-200">
-                {block.text}
+                <SearchHighlightedText text={block.text} query={highlightQuery} />
               </pre>
             </div>
           );
@@ -80,7 +84,7 @@ export default function StructuredTranslationBody({ paragraphs, compact = false 
 
         return (
           <p key={`paragraph-${index + 1}`} className={`${paragraphSpacing} last:mb-0`}>
-            {block.text}
+            <SearchHighlightedText text={block.text} query={highlightQuery} />
           </p>
         );
       })}

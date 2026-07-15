@@ -1898,7 +1898,10 @@ export default function HomePage() {
                       ) : canShowImageSideBySide ? (
                         <ImageSideBySideView imageDataUrl={imageDataUrl ?? ""} translatedText={translationPages[0]?.translatedText || ""} />
                       ) : (
-                        <SideBySideView chunks={translatedChunks} />
+                        <SideBySideView
+                          chunks={translatedChunks}
+                          unitLabel={inputMode === "document" ? documentUnitLabel : "Section"}
+                        />
                       )
                     ) : null}
                   </>
