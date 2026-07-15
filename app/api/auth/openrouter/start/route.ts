@@ -35,7 +35,9 @@ const redirectToConfigurationError = (request: NextRequest, error: unknown) => {
   url.searchParams.set("openrouter", "error");
   url.searchParams.set("openrouter_error", getConfigurationErrorCode(error));
   url.searchParams.set("settings", "connections");
-  return NextResponse.redirect(url);
+  const response = NextResponse.redirect(url);
+  response.headers.set("Cache-Control", "no-store, max-age=0");
+  return response;
 };
 
 export async function GET(request: NextRequest) {
@@ -51,6 +53,7 @@ export async function GET(request: NextRequest) {
     authorizationUrl.searchParams.set("code_challenge_method", "S256");
 
     const response = NextResponse.redirect(authorizationUrl);
+    response.headers.set("Cache-Control", "no-store, max-age=0");
     response.cookies.set(
       OPENROUTER_PKCE_COOKIE,
       serializeOpenRouterPkceSession({ verifier, createdAt: Date.now() }),

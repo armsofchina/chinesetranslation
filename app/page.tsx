@@ -41,7 +41,12 @@ import { downloadTxt } from "@/lib/exportTxt";
 import { extractStructuredDocument, getDocumentFormat } from "@/lib/documentExtract";
 import { ExtractedEntity, extractEntitiesHeuristic } from "@/lib/extractEntities";
 import { normalizeTranslationFootnotes, parseTranslationText } from "@/lib/footnotes";
-import { fileToDataUrl, hasSelectableTextInPdfPage, renderPdfPagesToJpegDataUrls } from "@/lib/imageOcr";
+import {
+  fileToDataUrl,
+  hasSelectableTextInPdfPage,
+  preparePdfOcrFallback,
+  renderPdfPagesToJpegDataUrls
+} from "@/lib/imageOcr";
 import { extractSelectableTextFromPdf } from "@/lib/pdfExtract";
 import {
   clearWorkspaceSnapshot,
@@ -354,14 +359,24 @@ export default function HomePage() {
     [documentFormat, pdfPages]
   );
   const ocrPageCount = useMemo(
-    () => documentFormat === "pdf" ? Math.max(pdfTotalPages - pagesWithSelectableText, 0) : 0,
-    [documentFormat, pagesWithSelectableText, pdfTotalPages]
+    () => documentFormat === "pdf" ? pdfPages.filter((page) => !hasSelectableTextInPdfPage(page.text)).length : 0,
+    [documentFormat, pdfPages]
+  );
+  const unavailablePdfPageCount = useMemo(
+    () => documentFormat === "pdf" ? Math.max(pdfTotalPages - pdfPages.length, 0) : 0,
+    [documentFormat, pdfPages.length, pdfTotalPages]
   );
   const documentFormatLabel = DOCUMENT_FORMAT_LABELS[documentFormat];
   const documentUnitLabel = DOCUMENT_UNIT_LABELS[documentFormat];
   const selectedDocumentPages = useMemo(
     () => pdfPages.filter((page) => page.pageNumber >= documentRangeStart && page.pageNumber <= documentRangeEnd),
     [documentRangeEnd, documentRangeStart, pdfPages]
+  );
+  const selectedOcrPageCount = useMemo(
+    () => documentFormat === "pdf"
+      ? selectedDocumentPages.filter((page) => !hasSelectableTextInPdfPage(page.text)).length
+      : 0,
+    [documentFormat, selectedDocumentPages]
   );
   const hasTranslation = useMemo(
     () => translatedChunks.length > 0 || translationPages.some((page) => page.translatedText.trim()),
@@ -401,8 +416,8 @@ export default function HomePage() {
 
       return {
         title: pdfName || "PDF ready",
-        detail: `${pdfTotalPages} page${pdfTotalPages === 1 ? "" : "s"} loaded · ${pagesWithSelectableText} selectable · ${ocrPageCount} OCR candidate${ocrPageCount === 1 ? "" : "s"}`,
-        helper: ocrPageCount > 0 ? SCANNED_MESSAGE : "This document appears mostly text-selectable and is ready for translation."
+        detail: `${pdfTotalPages} page${pdfTotalPages === 1 ? "" : "s"} loaded · ${pagesWithSelectableText} selectable · ${ocrPageCount} OCR candidate${ocrPageCount === 1 ? "" : "s"}${unavailablePdfPageCount > 0 ? ` · ${unavailablePdfPageCount} unavailable` : ""}`,
+        helper: pdfScannedMessage || (ocrPageCount > 0 ? SCANNED_MESSAGE : "This document appears mostly text-selectable and is ready for translation.")
       };
     }
 
@@ -436,7 +451,7 @@ export default function HomePage() {
       detail: `${pastedText.length.toLocaleString()} characters · ${sectionCount} section${sectionCount === 1 ? "" : "s"} to translate`,
       helper: "Use the glossary and domain selector before translating if terminology matters."
     };
-  }, [documentFormat, documentFormatLabel, documentUnitLabel, imageDataUrl, imageName, inputMode, ocrPageCount, pagesWithSelectableText, pastedText, pdfName, pdfPages.length, pdfTotalPages, sourceChunks.length]);
+  }, [documentFormat, documentFormatLabel, documentUnitLabel, imageDataUrl, imageName, inputMode, ocrPageCount, pagesWithSelectableText, pastedText, pdfName, pdfPages.length, pdfScannedMessage, pdfTotalPages, sourceChunks.length, unavailablePdfPageCount]);
 
   const translateDisabled =
     processing ||
@@ -454,7 +469,7 @@ export default function HomePage() {
   const preflightSummary = useMemo<TranslationPreflightSummary>(() => {
     if (inputMode === "document") {
       const ocrPages = documentFormat === "pdf"
-        ? selectedDocumentPages.filter((page) => !hasSelectableTextInPdfPage(page.text)).length
+        ? selectedOcrPageCount
         : 0;
       const sourceCharacters = selectedDocumentPages.reduce((total, page) => total + page.text.length, 0);
       const textRequests = createChunksFromPdfPages(selectedDocumentPages).length;
@@ -496,7 +511,7 @@ export default function HomePage() {
       unitLabel: "section",
       sourceLabel: "Pasted text"
     };
-  }, [documentFormat, documentFormatLabel, documentUnitLabel, inputMode, pastedText.length, pdfTotalPages, selectedDocumentPages, sourceChunks]);
+  }, [documentFormat, documentFormatLabel, documentUnitLabel, inputMode, pastedText.length, pdfTotalPages, selectedDocumentPages, selectedOcrPageCount, sourceChunks]);
 
   const requiresLargeFileWarning = useMemo(
     () =>
@@ -852,9 +867,27 @@ export default function HomePage() {
     setProgressStep("extracting");
     setStatusMessage(`Extracting ${DOCUMENT_FORMAT_LABELS[format]} text...`);
 
-    const result = format === "pdf"
+    let result = format === "pdf"
       ? await extractSelectableTextFromPdf(file)
       : await extractStructuredDocument(file, format);
+
+    if (format === "pdf" && result.kind === "error") {
+      setStatusMessage("Text extraction failed. Checking PDF pages for OCR fallback...");
+      result = await preparePdfOcrFallback(
+        file,
+        result.message,
+        MAX_DOCUMENT_UNITS,
+        (completedPages, totalPages) => {
+          if (loadId === sourceLoadRef.current) {
+            setStatusMessage(
+              completedPages === 0
+                ? `Checking ${totalPages} pages for OCR fallback...`
+                : `Checking page ${completedPages} of ${totalPages} for OCR fallback...`
+            );
+          }
+        }
+      );
+    }
 
     if (loadId !== sourceLoadRef.current) return;
 
@@ -886,8 +919,12 @@ export default function HomePage() {
     setCanResume(false);
     setSourcePanelOpen(false);
 
+    const containsOcrPages = format === "pdf" && result.pages.some((page) => !hasSelectableTextInPdfPage(page.text));
+    if (result.kind === "scanned" || containsOcrPages) {
+      setPdfScannedMessage(result.kind === "scanned" ? result.message : SCANNED_MESSAGE);
+    }
+
     if (result.kind === "scanned") {
-      setPdfScannedMessage(SCANNED_MESSAGE);
       return;
     }
 
@@ -1164,6 +1201,7 @@ export default function HomePage() {
         .map((page) => [page.pageNumber, page.originalText])
     );
     const completedPageNumbers = new Set(completedPages.map((page) => page.pageNumber));
+    const skippedOcrPageNumbers: number[] = [];
     const lastCompletedChunk = completedChunks[completedChunks.length - 1];
     let rollingContext = lastCompletedChunk
       ? makeRollingContext(lastCompletedChunk.originalChinese, lastCompletedChunk.translatedEnglish)
@@ -1205,7 +1243,9 @@ export default function HomePage() {
         if (!ocrText) {
           const imageDataUrl = ocrImageMap.get(page.pageNumber);
           if (!imageDataUrl) {
-            throw new Error(`Unable to prepare OCR image for page ${page.pageNumber}.`);
+            skippedOcrPageNumbers.push(page.pageNumber);
+            setCompletedUnits(completedPages.length + skippedOcrPageNumbers.length);
+            continue;
           }
           setStatusMessage(`Transcribing ${unitPosition}...`);
           const ocrResult = await transcribeImageWithRetry({
@@ -1298,6 +1338,7 @@ export default function HomePage() {
 
     setIsStreaming(false);
     setLiveText("");
+    return skippedOcrPageNumbers;
   };
 
   const handleTranslateImage = async (resume: boolean, job: TranslationJobSnapshot) => {
@@ -1424,9 +1465,10 @@ export default function HomePage() {
     try {
       assertCurrentTranslationJob(activeJobRef.current?.id, job.id, abortControllerRef.current.signal);
       setProgressStep("translating");
+      let skippedPdfPages: number[] = [];
 
       if (inputMode === "document") {
-        await handleTranslateDocumentByUnit(resume, job);
+        skippedPdfPages = await handleTranslateDocumentByUnit(resume, job);
       } else if (inputMode === "image") {
         await handleTranslateImage(resume, job);
       } else {
@@ -1486,7 +1528,13 @@ export default function HomePage() {
       setTranslationStale(false);
       setCanResume(false);
       setProgressStep("done");
-      setStatusMessage("Translation complete.");
+      if (skippedPdfPages.length > 0) {
+        const skippedLabel = `${skippedPdfPages.length} page${skippedPdfPages.length === 1 ? "" : "s"}`;
+        setErrorMessage(`Translation completed for the readable pages, but ${skippedLabel} could not be rendered and was skipped.`);
+        setStatusMessage(`Translation complete with ${skippedLabel} skipped.`);
+      } else {
+        setStatusMessage("Translation complete.");
+      }
       setTimeout(() => {
         if (!activeJobRef.current) {
           setStatusMessage("");
@@ -1780,7 +1828,11 @@ export default function HomePage() {
                     ? "Resume translation"
                     : translationStale
                       ? "Update translation"
-                      : "Translate to English"}
+                      : inputMode === "document" && documentFormat === "pdf" && selectedOcrPageCount > 0
+                        ? selectedOcrPageCount === selectedDocumentPages.length
+                          ? "Translate with OCR"
+                          : "Translate text + OCR"
+                        : "Translate to English"}
                 </button>
               )}
               <button type="button" onClick={handleReset} disabled={processing} className="secondary-button w-full">
@@ -1970,6 +2022,11 @@ export default function HomePage() {
                           {ocrPageCount > 0 ? (
                             <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
                               {ocrPageCount} OCR page{ocrPageCount === 1 ? "" : "s"} detected
+                            </span>
+                          ) : null}
+                          {unavailablePdfPageCount > 0 ? (
+                            <span className="status-pill bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-200">
+                              {unavailablePdfPageCount} page{unavailablePdfPageCount === 1 ? "" : "s"} unavailable
                             </span>
                           ) : null}
                         </div>

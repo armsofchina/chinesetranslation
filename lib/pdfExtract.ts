@@ -3,6 +3,7 @@ import { cleanExtractedChineseText } from "@/lib/chineseTextCleanup";
 
 const SCANNED_PDF_MESSAGE =
   "This PDF appears image-based. OCR translation can still be used, but names, seals, and dense tables may need manual review.";
+const PDF_WORKER_PATH = "/pdf.worker.min.mjs";
 
 type PdfTextItem = {
   str?: string;
@@ -21,8 +22,36 @@ const ensureWorker = async () => {
     return;
   }
   const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+  pdfjs.GlobalWorkerOptions.workerSrc = `${PDF_WORKER_PATH}?v=${encodeURIComponent(pdfjs.version)}`;
   workerConfigured = true;
+};
+
+const hasPdfHeader = (data: Uint8Array): boolean => {
+  const prefix = data.subarray(0, Math.min(data.length, 1024));
+  return String.fromCharCode(...prefix).includes("%PDF-");
+};
+
+const getPdfErrorMessage = (error: unknown): string => {
+  const name = error instanceof Error ? error.name : "";
+  const detail = error instanceof Error ? error.message.toLowerCase() : "";
+
+  if (name === "PasswordException" || detail.includes("password")) {
+    return "This PDF is password-protected. Remove the password and upload it again.";
+  }
+  if (name === "InvalidPDFException" || detail.includes("invalid pdf") || detail.includes("pdf header")) {
+    return "This file is not a valid PDF or is damaged. Try opening and re-exporting it as a new PDF.";
+  }
+  if (
+    detail.includes("worker") ||
+    detail.includes("fake worker") ||
+    detail.includes("dynamically imported module")
+  ) {
+    return "The PDF reader could not load. Refresh the page and try again; if this continues, the deployment is missing its PDF worker file.";
+  }
+  if (detail.includes("all pages failed")) {
+    return "The PDF opened, but none of its pages could be read. Try re-exporting the document or use OCR if the pages are images.";
+  }
+  return "This PDF could not be read. It may be damaged or use an unsupported security or encoding format.";
 };
 
 const normalizePageText = (text: string): string =>
@@ -108,22 +137,49 @@ const removeRepeatedMargins = (pages: { pageNumber: number; text: string }[]) =>
 
 export const extractSelectableTextFromPdf = async (file: File): Promise<PdfExtractResult> => {
   try {
+    const data = new Uint8Array(await file.arrayBuffer());
+    if (!hasPdfHeader(data)) {
+      return {
+        kind: "error",
+        message: "This file is not a valid PDF or is damaged. Try opening and re-exporting it as a new PDF."
+      };
+    }
+
     await ensureWorker();
     const pdfjs = await import("pdfjs-dist");
-    const data = await file.arrayBuffer();
-    const loadingTask = pdfjs.getDocument({ data });
+    const loadingTask = pdfjs.getDocument({
+      data: data.slice(),
+      isEvalSupported: false,
+      stopAtErrors: false,
+      useWorkerFetch: false
+    });
     const pdfDoc = await loadingTask.promise;
     const totalPages = pdfDoc.numPages;
 
     const pages: { pageNumber: number; text: string }[] = [];
+    let failedPages = 0;
 
     for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
-      const page = await pdfDoc.getPage(pageNumber);
-      const textContent = await page.getTextContent();
-      const pageText = rebuildPageText(textContent.items as PdfTextItem[]);
+      try {
+        const page = await pdfDoc.getPage(pageNumber);
+        const textContent = await page.getTextContent();
+        const pageText = rebuildPageText(textContent.items as PdfTextItem[]);
+        pages.push({ pageNumber, text: normalizePageText(pageText) });
+        page.cleanup();
+      } catch (pageError) {
+        failedPages += 1;
+        pages.push({ pageNumber, text: "" });
+        console.warn(
+          `PDF page ${pageNumber} could not be read:`,
+          pageError instanceof Error ? pageError.message : "Unknown page error."
+        );
+      }
+    }
 
-      const normalized = normalizePageText(pageText);
-      pages.push({ pageNumber, text: normalized });
+    await pdfDoc.destroy();
+
+    if (failedPages === totalPages && totalPages > 0) {
+      throw new Error("All pages failed to parse.");
     }
 
     const cleanedPages = removeRepeatedMargins(pages);
@@ -131,9 +187,12 @@ export const extractSelectableTextFromPdf = async (file: File): Promise<PdfExtra
     if (!hasSelectableText) {
       return { kind: "scanned", message: SCANNED_PDF_MESSAGE, pages: cleanedPages, totalPages };
     }
-
     return { kind: "success", pages: cleanedPages, totalPages };
-  } catch {
-    return { kind: "error", message: "Unable to extract text from this PDF file." };
+  } catch (error) {
+    console.error(
+      "PDF extraction failed:",
+      error instanceof Error ? `${error.name}: ${error.message}` : "Unknown PDF parsing error."
+    );
+    return { kind: "error", message: getPdfErrorMessage(error) };
   }
 };

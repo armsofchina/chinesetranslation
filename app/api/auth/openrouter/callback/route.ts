@@ -20,7 +20,9 @@ const redirectToApp = (baseUrl: string, result: "connected" | "error", errorCode
     url.searchParams.set("openrouter_error", errorCode);
   }
   url.searchParams.set("settings", "connections");
-  return NextResponse.redirect(url);
+  const response = NextResponse.redirect(url);
+  response.headers.set("Cache-Control", "no-store, max-age=0");
+  return response;
 };
 
 const redirectToRequestOrigin = (request: NextRequest, errorCode: string) => {
@@ -30,7 +32,9 @@ const redirectToRequestOrigin = (request: NextRequest, errorCode: string) => {
   url.searchParams.set("openrouter", "error");
   url.searchParams.set("openrouter_error", errorCode);
   url.searchParams.set("settings", "connections");
-  return NextResponse.redirect(url);
+  const response = NextResponse.redirect(url);
+  response.headers.set("Cache-Control", "no-store, max-age=0");
+  return response;
 };
 
 const createSessionResponse = (
@@ -42,6 +46,7 @@ const createSessionResponse = (
   connectedUrl.searchParams.set("openrouter", "connected");
   connectedUrl.searchParams.set("settings", "connections");
   const response = NextResponse.redirect(connectedUrl);
+  response.headers.set("Cache-Control", "no-store, max-age=0");
   response.cookies.set(OPENROUTER_SESSION_COOKIE, sealOpenRouterSession({ apiKey, userId, connectedAt: Date.now() }), getOpenRouterSessionCookieOptions());
   response.cookies.set(OPENROUTER_PKCE_COOKIE, "", getOpenRouterPkceCookieOptions(0));
   return response;

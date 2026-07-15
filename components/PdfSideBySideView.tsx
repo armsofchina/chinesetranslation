@@ -85,8 +85,13 @@ export default function PdfSideBySideView({
   const parsedTranslation = parseTranslationText(currentTranslation?.translatedText || "");
   const translatedCount = translationPages.filter((page) => page.translatedText.trim()).length;
   const ocrReadyCount = extractedPages.filter((page) => !page.text.trim()).length;
-  const currentPageNeedsOcr = !extractedPages.find((page) => page.pageNumber === currentPage)?.text.trim();
-  const nextUntranslatedPage = pageOptions.find((option) => !pageTranslationMap.get(option.value)?.translatedText?.trim());
+  const unavailableCount = Math.max(totalPages - extractedPages.length, 0);
+  const currentExtractedPage = extractedPages.find((page) => page.pageNumber === currentPage);
+  const currentPageUnavailable = !currentExtractedPage;
+  const currentPageNeedsOcr = Boolean(currentExtractedPage && !currentExtractedPage.text.trim());
+  const nextUntranslatedPage = pageOptions.find(
+    (option) => extractedPages.some((page) => page.pageNumber === option.value) && !pageTranslationMap.get(option.value)?.translatedText?.trim()
+  );
   const canShowTextSource = Boolean(fallbackChineseText.trim());
   const showTextSource = sourceDisplay === "text" && canShowTextSource;
   const normalizedSearchQuery = normalizeDocumentSearchQuery(searchQuery);
@@ -221,6 +226,11 @@ export default function PdfSideBySideView({
               {ocrReadyCount} OCR page{ocrReadyCount === 1 ? "" : "s"}
             </span>
           ) : null}
+          {unavailableCount > 0 ? (
+            <span className="status-pill bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-200">
+              {unavailableCount} unavailable
+            </span>
+          ) : null}
 
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
             {nextUntranslatedPage ? (
@@ -298,7 +308,11 @@ export default function PdfSideBySideView({
             <p className="eyebrow">
               {showTextSource ? "Original Chinese Text" : "Original PDF"} • Page {currentPage}
             </p>
-            {currentPageNeedsOcr ? (
+            {currentPageUnavailable ? (
+              <span className="status-pill bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-200">
+                Unreadable page
+              </span>
+            ) : currentPageNeedsOcr ? (
               <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
                 OCR page
               </span>
@@ -387,6 +401,10 @@ export default function PdfSideBySideView({
                   </section>
                 ) : null}
               </div>
+            ) : currentPageUnavailable ? (
+              <p className="document-text rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100">
+                This page could not be rendered and was skipped. Other readable pages can still be translated with OCR.
+              </p>
             ) : scannedMessage ? (
               <p className="document-text rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
                 {scannedMessage}
