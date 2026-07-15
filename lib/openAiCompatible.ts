@@ -143,6 +143,19 @@ async function* streamProviderDeltas(response: Response): AsyncGenerator<string,
         }
       }
     }
+    const finalLine = buffer.trim();
+    if (finalLine.startsWith("data:")) {
+      const data = finalLine.slice("data:".length).trim();
+      if (data && data !== "[DONE]") {
+        try {
+          const payload = JSON.parse(data);
+          const delta = extractDeltaText(payload?.choices?.[0]?.delta);
+          if (delta) yield delta;
+        } catch {
+          // Ignore an incomplete final provider event.
+        }
+      }
+    }
   } finally {
     reader.releaseLock();
   }
@@ -189,7 +202,7 @@ export const streamTranslateImage = async ({
     previousSummary,
     glossary,
     imageDataUrl
-  } as any);
+  });
   const response = await requestProviderStream(
     { endpoint, apiKey, model, headers, signal },
     { model, messages, temperature }
@@ -278,7 +291,7 @@ export const translateImage = async ({
         previousSummary,
         glossary,
         imageDataUrl
-      } as any),
+      }),
       temperature: 0.1
     },
     "Image translation request failed."

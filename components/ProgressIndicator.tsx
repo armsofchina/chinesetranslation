@@ -11,15 +11,6 @@ type ProgressIndicatorProps = {
   streaming?: boolean;
 };
 
-const stepRank: Record<ProgressStep, number> = {
-  idle: -1,
-  extracting: 0,
-  preparing: 1,
-  translating: 2,
-  generating: 3,
-  done: 4
-};
-
 const stepLabel: Record<Exclude<ProgressStep, "idle" | "done">, string> = {
   extracting: "Extracting",
   preparing: "Preparing",
@@ -39,7 +30,6 @@ export default function ProgressIndicator({
     return null;
   }
 
-  const rank = stepRank[step];
   let percent = 0;
   if (step === "extracting") percent = 6;
   else if (step === "preparing") percent = 12;

@@ -5,8 +5,8 @@ A polished Next.js MVP for translating Traditional and Simplified Chinese text i
 ## Features
 
 - Upload PDF, DOCX, EPUB, and PowerPoint (`.pptx`) files
-- Preserve DOCX section order, EPUB reading-spine order, and PowerPoint slide order
-- Extract selectable PDF text using PDF.js
+- Preserve headings, lists, tables, DOCX section order, EPUB reading-spine order, and PowerPoint slide order
+- Reconstruct selectable PDF text from coordinates and remove repeated page headers/footers
 - OCR + translate scanned/image-only PDF pages using PPQ vision models
 - Upload images (PNG/JPG/WEBP/BMP/TIFF) and translate non-selectable text
 - Paste Chinese text directly and translate without uploading files
@@ -15,7 +15,11 @@ A polished Next.js MVP for translating Traditional and Simplified Chinese text i
 - Switch between Original Chinese, English Translation, and Side-by-side views
 - Jump directly to a page, section, chapter, or slide and search Chinese and English side-by-side text with highlighted match navigation
 - Copy full English translation in one click
-- Download translation as TXT or PDF
+- Run deterministic per-segment QA for dates, numbers, percentages, currency, glossary terms, and source leakage
+- Review, annotate, approve, or retranslate individual segments
+- Reuse exact approved translations from on-device translation memory
+- Edit/import/export bilingual glossaries; AI term analysis is opt-in
+- Download as TXT, PDF, bilingual HTML, or bilingual DOCX
 - Light, dark, and system theme support with local preference persistence
 
 ## Tech Stack
@@ -52,6 +56,8 @@ OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openrouter/free
 OPENROUTER_VISION_MODEL=openrouter/free
 OPENROUTER_APP_NAME=Translation Vibe
+OPENROUTER_SESSION_SECRET=replace-with-at-least-32-random-characters
+OPENROUTER_ALLOWED_MODELS=
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
@@ -69,7 +75,7 @@ npm run dev
 
 - PPQ supports a shared server `PPQ_API_KEY` or an optional personal key entered in settings.
 - OpenRouter supports a shared server `OPENROUTER_API_KEY` or one-click account connection using OAuth PKCE.
-- Connected OpenRouter keys are stored in the user's browser local storage and sent with OpenRouter translation requests.
+- Connected OpenRouter keys are encrypted into an HttpOnly, Secure production session cookie and are not exposed to page JavaScript. Configure `OPENROUTER_SESSION_SECRET` in production.
 - The OpenRouter model selector defaults to `openrouter/free`, lists pinned `:free` models first, and clearly separates standard models that may use account credits.
 - Model choices are saved with the local workspace. OCR uses `OPENROUTER_VISION_MODEL` or the automatic free vision route so text-only model selections do not break scanned documents.
 - The selected provider is saved with the local workspace and used for translation, OCR, and glossary extraction.
@@ -85,7 +91,17 @@ npm run dev
 - Never expose `PPQ_API_KEY` via `NEXT_PUBLIC_*` variables.
 - Do not log API keys in server logs or client logs.
 - Use HTTPS in production.
-- Browser-stored OpenRouter keys are accessible to JavaScript running on the same origin. Keep dependencies current, use a restrictive content security policy, and avoid third-party scripts.
+- Set a unique, high-entropy `OPENROUTER_SESSION_SECRET`; rotating it invalidates existing OpenRouter connections.
+- Use `OPENROUTER_ALLOWED_MODELS` as a comma-separated allowlist when deployments need model/cost controls.
+- Translation requests have schema, size, rate, and two-minute upstream timeout limits. Multi-instance deployments should replace the in-process rate limiter with a shared store.
 - Uploaded files and workspace progress are stored locally in IndexedDB for recovery and are not uploaded by the extraction pipeline.
 - Legacy binary `.ppt` files must be saved as `.pptx` before upload.
-# chinesetranslation
+
+## Verification
+
+```bash
+npm test
+npm run lint
+npm run typecheck
+npm run build
+```

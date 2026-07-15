@@ -121,13 +121,21 @@ const collectHtmlText = (element: Element): string => {
     if (tagName === "script" || tagName === "style" || tagName === "svg") {
       return;
     }
-    if (BLOCK_TAGS.has(tagName)) {
+    if (/^h[1-6]$/.test(tagName)) {
+      parts.push(`\n${"#".repeat(Number(tagName[1]))} `);
+    } else if (tagName === "li") {
+      parts.push("\n- ");
+    } else if (tagName === "tr") {
+      parts.push("\n");
+    } else if (tagName === "td" || tagName === "th") {
+      if (parts.length && !parts[parts.length - 1].endsWith("\n")) parts.push("\t");
+    } else if (BLOCK_TAGS.has(tagName)) {
       parts.push("\n");
     }
     for (const child of Array.from(node.childNodes)) {
       visit(child);
     }
-    if (BLOCK_TAGS.has(tagName)) {
+    if (tagName !== "td" && tagName !== "th" && BLOCK_TAGS.has(tagName)) {
       parts.push("\n");
     }
   };
@@ -174,6 +182,31 @@ const toPages = (texts: string[], pageNumbers?: number[]): ExtractedPdfPage[] =>
     }))
     .filter((page) => Boolean(page.text));
 
+const getWordAttribute = (element: Element | null | undefined, name: string): string =>
+  element?.getAttribute(`w:${name}`) || element?.getAttribute(name) || "";
+
+const formatWordParagraph = (paragraph: Element): string => {
+  const text = collectElementText(paragraph).trim();
+  if (!text) return "";
+  const properties = Array.from(paragraph.children).find((child) => child.localName === "pPr");
+  const styleElement = properties ? Array.from(properties.children).find((child) => child.localName === "pStyle") : undefined;
+  const style = getWordAttribute(styleElement, "val").toLowerCase();
+  const headingMatch = style.match(/(?:heading|標題|标题)\s*([1-6])?/i);
+  if (headingMatch) return `${"#".repeat(Number(headingMatch[1] || 1))} ${text}`;
+  const isList = Boolean(properties && Array.from(properties.children).some((child) => child.localName === "numPr"));
+  return isList ? `- ${text}` : text;
+};
+
+const formatWordTable = (table: Element): string =>
+  Array.from(table.children)
+    .filter((child) => child.localName === "tr")
+    .map((row) => Array.from(row.children)
+      .filter((child) => child.localName === "tc")
+      .map((cell) => Array.from(cell.getElementsByTagName("w:p")).map(collectElementText).filter(Boolean).join(" "))
+      .join("\t"))
+    .filter(Boolean)
+    .join("\n");
+
 const extractDocx = async (zip: import("jszip")): Promise<StructuredDocumentExtractResult> => {
   const documentFile = zip.file("word/document.xml");
   if (!documentFile) {
@@ -181,8 +214,16 @@ const extractDocx = async (zip: import("jszip")): Promise<StructuredDocumentExtr
   }
 
   const document = parseXml(await documentFile.async("string"));
-  const paragraphs = Array.from(document.getElementsByTagName("w:p")).map(collectElementText);
-  const sections = groupTextBlocks(paragraphs);
+  const body = document.getElementsByTagName("w:body")[0];
+  if (!body) {
+    return { kind: "error", message: "This DOCX does not contain a readable document body." };
+  }
+  const blocks = Array.from(body.children).map((element) => {
+    if (element.localName === "p") return formatWordParagraph(element);
+    if (element.localName === "tbl") return formatWordTable(element);
+    return "";
+  });
+  const sections = groupTextBlocks(blocks);
   if (sections.length === 0) {
     return { kind: "error", message: "No readable text was found in this DOCX file." };
   }
@@ -274,7 +315,12 @@ const extractPptx = async (zip: import("jszip")): Promise<StructuredDocumentExtr
       continue;
     }
     const slide = parseXml(await slideFile.async("string"));
-    const paragraphs = Array.from(slide.getElementsByTagName("a:p")).map(collectElementText);
+    const paragraphs = Array.from(slide.getElementsByTagName("a:p")).map((paragraph) => {
+      const text = collectElementText(paragraph).trim();
+      const properties = Array.from(paragraph.children).find((child) => child.localName === "pPr");
+      const bullet = properties && Array.from(properties.children).some((child) => child.localName === "buChar" || child.localName === "buAutoNum");
+      return bullet && text ? `- ${text}` : text;
+    });
     const text = normalizeExtractedText(paragraphs.filter(Boolean).join("\n"));
     if (text) {
       slideTexts.push(text);

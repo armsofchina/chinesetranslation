@@ -29,13 +29,13 @@ import {
   OPENROUTER_API_KEY_STORAGE,
   OPENROUTER_CONNECTION_STORAGE,
   OPENROUTER_MODEL_STORAGE,
-  parseOpenRouterBrowserConnection
 } from "@/lib/openRouterBrowser";
 import {
   normalizeOpenRouterModel,
   OPENROUTER_AUTO_FREE_MODEL
 } from "@/lib/openRouterModels";
 import { downloadBilingualHtml } from "@/lib/exportHtml";
+import { downloadBilingualDocx } from "@/lib/exportDocx";
 import { downloadEnglishPdf } from "@/lib/exportPdf";
 import { downloadTxt } from "@/lib/exportTxt";
 import { extractStructuredDocument, getDocumentFormat } from "@/lib/documentExtract";
@@ -50,6 +50,7 @@ import {
 } from "@/lib/projectStore";
 import { DOMAINS, TranslationDomain } from "@/lib/prompts";
 import { inspectTranslationQuality } from "@/lib/qualityChecks";
+import { buildSegmentQaReport } from "@/lib/segmentQa";
 import { withSmartRetry } from "@/lib/smartRetry";
 import { streamTranslation } from "@/lib/streamClient";
 import {
@@ -60,6 +61,8 @@ import {
 } from "@/lib/textChunking";
 import { applyThemePreference, getSavedThemePreference, saveThemePreference } from "@/lib/theme";
 import { DocumentFormat, ExtractedPdfPage, ThemePreference, TranslationChunk, TranslationPage } from "@/lib/types";
+import { assertCurrentTranslationJob, createTranslationJob, TranslationJobSnapshot } from "@/lib/translationJob";
+import { findTranslationMemory, rememberTranslation } from "@/lib/translationMemory";
 
 const USER_API_KEY_STORAGE = "translator-user-ppq-key";
 const LEGACY_USER_API_KEY_STORAGE = "translator-user-openrouter-key";
@@ -153,10 +156,16 @@ export default function HomePage() {
   const [glossaryEntries, setGlossaryEntries] = useState<GlossaryEntry[]>([]);
   const [extractedEntities, setExtractedEntities] = useState<ExtractedEntity[]>([]);
   const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
+  const [analyzingTerms, setAnalyzingTerms] = useState(false);
 
   const [toastMessage, setToastMessage] = useState("");
   const [toastVisible, setToastVisible] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const entityAbortControllerRef = useRef<AbortController | null>(null);
+  const activeJobRef = useRef<TranslationJobSnapshot | null>(null);
+  const sourceRevisionRef = useRef(0);
+  const sourceLoadRef = useRef(0);
+  const completedResultCountRef = useRef(0);
   const resultsRef = useRef<HTMLElement | null>(null);
   const editHistoryRef = useRef<TranslationChunk[][]>([]);
   const connectedFromOpenRouterRef = useRef(false);
@@ -175,16 +184,16 @@ export default function HomePage() {
       window.localStorage.setItem(USER_API_KEY_STORAGE, savedKey);
       window.localStorage.removeItem(LEGACY_USER_API_KEY_STORAGE);
     }
-    const savedOpenRouterKey = window.localStorage.getItem(OPENROUTER_API_KEY_STORAGE)?.trim() || "";
-    const savedOpenRouterConnection = parseOpenRouterBrowserConnection(
-      window.localStorage.getItem(OPENROUTER_CONNECTION_STORAGE)
-    );
-    setOpenRouterApiKey(savedOpenRouterKey);
-    setOpenRouterConnection({
-      connected: Boolean(savedOpenRouterKey),
-      loading: false,
-      userId: savedOpenRouterConnection?.userId
-    });
+    // OAuth keys are held in an encrypted HttpOnly cookie; JavaScript only receives connection status.
+    fetch("/api/auth/openrouter/session", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((session: { connected?: boolean; userId?: string }) => {
+        setOpenRouterApiKey("");
+        setOpenRouterConnection({ connected: Boolean(session.connected), loading: false, userId: session.userId });
+      })
+      .catch(() => setOpenRouterConnection({ connected: false, loading: false }));
+    window.localStorage.removeItem(OPENROUTER_API_KEY_STORAGE);
+    window.localStorage.removeItem(OPENROUTER_CONNECTION_STORAGE);
     setOpenRouterModel(normalizeOpenRouterModel(window.localStorage.getItem(OPENROUTER_MODEL_STORAGE)));
     setProvider(normalizeAiProvider(window.localStorage.getItem(PROVIDER_STORAGE)));
   }, []);
@@ -586,6 +595,10 @@ export default function HomePage() {
   }, [processing]);
 
   const markTranslationStale = () => {
+    sourceRevisionRef.current += 1;
+    if (activeJobRef.current && activeJobRef.current.sourceRevision !== sourceRevisionRef.current) {
+      abortControllerRef.current?.abort();
+    }
     if (hasTranslation) {
       setTranslationStale(true);
       setCanResume(false);
@@ -594,9 +607,10 @@ export default function HomePage() {
   };
 
   const handleInputModeChange = (mode: InputMode) => {
-    if (mode === inputMode) {
+    if (processing || mode === inputMode) {
       return;
     }
+    markTranslationStale();
     setInputMode(mode);
     setTranslatedChunks([]);
     setTranslationPages([]);
@@ -610,21 +624,25 @@ export default function HomePage() {
   };
 
   const handlePastedTextChange = (value: string) => {
+    if (processing) return;
     setPastedText(value);
     markTranslationStale();
   };
 
   const handleDomainChange = (value: TranslationDomain) => {
+    if (processing) return;
     setDomain(value);
     markTranslationStale();
   };
 
   const handleGlossaryEntriesChange = (entries: GlossaryEntry[]) => {
+    if (processing) return;
     setGlossaryEntries(entries);
     markTranslationStale();
   };
 
   const handleDocumentRangeChange = (start: number, end: number) => {
+    if (processing) return;
     const normalizedStart = Math.max(1, Math.min(start, Math.max(pdfTotalPages, 1)));
     const normalizedEnd = Math.max(normalizedStart, Math.min(end, Math.max(pdfTotalPages, 1)));
     if (normalizedStart === documentRangeStart && normalizedEnd === documentRangeEnd) {
@@ -636,15 +654,33 @@ export default function HomePage() {
   };
 
   const commitTranslationEdit = (chunkId: string, translatedEnglish: string) => {
+    const sourceChunk = translatedChunks.find((chunk) => chunk.id === chunkId);
+    if (sourceChunk && translatedEnglish.trim()) {
+      void rememberTranslation(sourceChunk.originalChinese, translatedEnglish, domain, lockedGlossary).catch(() => undefined);
+    }
     editHistoryRef.current.push(translatedChunks);
     const nextChunks = translatedChunks.map((chunk) =>
-      chunk.id === chunkId ? { ...chunk, translatedEnglish } : chunk
+      chunk.id === chunkId
+        ? {
+            ...chunk,
+            translatedEnglish,
+            qa: buildSegmentQaReport(chunk, translatedEnglish, lockedGlossary),
+            translationMemoryHit: false
+          }
+        : chunk
     );
     setTranslatedChunks(nextChunks);
     setTranslationPages((pages) =>
       pages.map((page) => {
         const nextPageChunks = page.chunks.map((chunk) =>
-          chunk.id === chunkId ? { ...chunk, translatedEnglish } : chunk
+          chunk.id === chunkId
+            ? {
+                ...chunk,
+                translatedEnglish,
+                qa: buildSegmentQaReport(chunk, translatedEnglish, lockedGlossary),
+                translationMemoryHit: false
+              }
+            : chunk
         );
         return {
           ...page,
@@ -654,6 +690,57 @@ export default function HomePage() {
       })
     );
     setApprovedChunkIds((ids) => ids.filter((id) => id !== chunkId));
+  };
+
+  const updateReviewNote = (chunkId: string, reviewNote: string) => {
+    setTranslatedChunks((chunks) => chunks.map((chunk) => chunk.id === chunkId ? { ...chunk, reviewNote } : chunk));
+    setTranslationPages((pages) => pages.map((page) => ({
+      ...page,
+      chunks: page.chunks.map((chunk) => chunk.id === chunkId ? { ...chunk, reviewNote } : chunk)
+    })));
+  };
+
+  const retranslateChunk = async (chunkId: string) => {
+    const chunk = translatedChunks.find((entry) => entry.id === chunkId);
+    if (!chunk || processing || activeJobRef.current) return;
+    const job = createTranslationJob({
+      sourceRevision: sourceRevisionRef.current,
+      provider,
+      model: provider === "openrouter" ? openRouterModel : undefined,
+      userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
+      userOpenRouterApiKey: provider === "openrouter" ? openRouterApiKey || undefined : undefined,
+      domain,
+      glossary: lockedGlossary,
+      chunks: [chunk]
+    });
+    const controller = new AbortController();
+    activeJobRef.current = job;
+    abortControllerRef.current = controller;
+    setErrorMessage("");
+    try {
+      const result = await translateChunkWithMemory(chunk, "", job, true);
+      assertCurrentTranslationJob(activeJobRef.current?.id, job.id, controller.signal);
+      const updated = {
+        ...chunk,
+        translatedEnglish: result.text,
+        qa: result.qa ?? buildSegmentQaReport(chunk, result.text, lockedGlossary),
+        translationMemoryHit: false
+      };
+      editHistoryRef.current.push(translatedChunks);
+      setTranslatedChunks((chunks) => chunks.map((entry) => entry.id === chunkId ? updated : entry));
+      setTranslationPages((pages) => pages.map((page) => {
+        const chunks = page.chunks.map((entry) => entry.id === chunkId ? updated : entry);
+        return { ...page, chunks, translatedText: normalizeTranslationFootnotes(joinEnglishTranslation(chunks)) };
+      }));
+      setApprovedChunkIds((ids) => ids.filter((id) => id !== chunkId));
+      if (result.model) setUsedModel(result.model);
+    } catch (error) {
+      if (!controller.signal.aborted) setErrorMessage(error instanceof Error ? error.message : "Retranslation failed.");
+    } finally {
+      if (activeJobRef.current?.id === job.id) activeJobRef.current = null;
+      if (abortControllerRef.current === controller) abortControllerRef.current = null;
+      setLiveText("");
+    }
   };
 
   const undoTranslationEdit = () => {
@@ -714,6 +801,10 @@ export default function HomePage() {
   };
 
   const handleFileSelect = async (file: File | null) => {
+    if (processing) return;
+    const loadId = ++sourceLoadRef.current;
+    entityAbortControllerRef.current?.abort();
+    markTranslationStale();
     setErrorMessage("");
     setTranslatedChunks([]);
     setTranslationPages([]);
@@ -761,6 +852,8 @@ export default function HomePage() {
       ? await extractSelectableTextFromPdf(file)
       : await extractStructuredDocument(file, format);
 
+    if (loadId !== sourceLoadRef.current) return;
+
     if (result.kind === "error") {
       setPdfPages([]);
       setPdfTotalPages(0);
@@ -799,11 +892,13 @@ export default function HomePage() {
     const heuristics = extractEntitiesHeuristic(fullText);
     setExtractedEntities(heuristics);
 
-    // Fire off LLM entity extraction in the background to auto-fill English.
-    fetchEntityTranslations(fullText);
   };
 
   const handleImageSelect = async (file: File | null) => {
+    if (processing) return;
+    const loadId = ++sourceLoadRef.current;
+    entityAbortControllerRef.current?.abort();
+    markTranslationStale();
     setErrorMessage("");
     setTranslatedChunks([]);
     setTranslationPages([]);
@@ -833,6 +928,7 @@ export default function HomePage() {
 
     try {
       const dataUrl = await fileToDataUrl(file);
+      if (loadId !== sourceLoadRef.current) return;
       setImageDataUrl(dataUrl);
       setApprovedChunkIds([]);
       setTranslationStale(false);
@@ -845,6 +941,7 @@ export default function HomePage() {
   };
 
   const handleSaveApiKey = () => {
+    if (processing) return;
     const trimmed = apiKeyDraft.trim();
     setActiveUserApiKey(trimmed);
 
@@ -871,7 +968,7 @@ export default function HomePage() {
   };
 
   const handleProviderChange = (nextProvider: AiProviderId) => {
-    if (nextProvider === provider) {
+    if (processing || nextProvider === provider) {
       return;
     }
     setProvider(nextProvider);
@@ -882,7 +979,7 @@ export default function HomePage() {
 
   const handleOpenRouterModelChange = (nextModel: string) => {
     const normalizedModel = normalizeOpenRouterModel(nextModel);
-    if (normalizedModel === openRouterModel) {
+    if (processing || normalizedModel === openRouterModel) {
       return;
     }
     setOpenRouterModel(normalizedModel);
@@ -891,9 +988,9 @@ export default function HomePage() {
     markTranslationStale();
   };
 
-  const handleDisconnectOpenRouter = () => {
-    window.localStorage.removeItem(OPENROUTER_API_KEY_STORAGE);
-    window.localStorage.removeItem(OPENROUTER_CONNECTION_STORAGE);
+  const handleDisconnectOpenRouter = async () => {
+    if (processing) return;
+    await fetch("/api/auth/openrouter/session", { method: "DELETE" }).catch(() => undefined);
     setOpenRouterApiKey("");
     setOpenRouterConnection({ connected: false, loading: false });
     if (provider === "openrouter") {
@@ -904,7 +1001,11 @@ export default function HomePage() {
     showToast("OpenRouter disconnected.");
   };
 
-  const fetchEntityTranslations = async (text: string) => {
+  const fetchEntityTranslations = async (text: string, revision: number) => {
+    entityAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    entityAbortControllerRef.current = controller;
+    setAnalyzingTerms(true);
     try {
       const response = await fetch("/api/extract-entities", {
         method: "POST",
@@ -916,10 +1017,15 @@ export default function HomePage() {
           model: provider === "openrouter" ? openRouterModel : undefined,
           userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
           userOpenRouterApiKey: provider === "openrouter" ? openRouterApiKey || undefined : undefined
-        })
+        }),
+        signal: controller.signal
       });
 
       if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || "Term analysis failed.");
+      }
+      if (revision !== sourceRevisionRef.current) {
         return;
       }
 
@@ -941,29 +1047,50 @@ export default function HomePage() {
         }
         return Array.from(map.values());
       });
-    } catch {
-      // Silently fail — glossary will still show heuristic Chinese terms.
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setErrorMessage(error instanceof Error ? error.message : "Term analysis failed.");
+      }
+    } finally {
+      if (entityAbortControllerRef.current === controller) {
+        entityAbortControllerRef.current = null;
+        setAnalyzingTerms(false);
+      }
     }
   };
 
-  const streamChunkWithRetry = (chunk: TranslationChunk, rollingContext: string) =>
+  const handleAnalyzeTerms = () => {
+    if (processing || analyzingTerms || inputMode === "image") return;
+    const text = inputMode === "document"
+      ? selectedDocumentPages.map((page) => page.text).join("\n\n")
+      : pastedText;
+    if (!text.trim()) return;
+    const heuristics = extractEntitiesHeuristic(text);
+    setExtractedEntities(heuristics);
+    void fetchEntityTranslations(text, sourceRevisionRef.current);
+  };
+
+  const streamChunkWithRetry = (chunk: TranslationChunk, rollingContext: string, job: TranslationJobSnapshot) =>
     withSmartRetry(
       async (_attempt, temperature) => {
+        assertCurrentTranslationJob(activeJobRef.current?.id, job.id, abortControllerRef.current?.signal);
         setLiveText("");
         return streamTranslation(
           {
             chunk,
-            provider,
-            model: provider === "openrouter" ? openRouterModel : undefined,
-            userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
-            userOpenRouterApiKey: provider === "openrouter" ? openRouterApiKey || undefined : undefined,
-            domain,
+            provider: job.provider,
+            model: job.model,
+            userPpqApiKey: job.userPpqApiKey,
+            userOpenRouterApiKey: job.userOpenRouterApiKey,
+            domain: job.domain,
             previousSummary: rollingContext || undefined,
-            glossary: lockedGlossary,
+            glossary: { ...job.glossary },
             temperature
           },
           {
-            onDelta: (delta) => setLiveText((prev) => prev + delta),
+            onDelta: (delta) => {
+              if (activeJobRef.current?.id === job.id) setLiveText((prev) => prev + delta);
+            },
             signal: abortControllerRef.current?.signal
           }
         );
@@ -971,21 +1098,49 @@ export default function HomePage() {
       { maxRetries: 2 }
     );
 
-  const transcribeImageWithRetry = (imageTask: { id: string; pageNumber: number; imageDataUrl: string }) =>
+  const translateChunkWithMemory = async (
+    chunk: TranslationChunk,
+    rollingContext: string,
+    job: TranslationJobSnapshot,
+    forceModel = false
+  ) => {
+    assertCurrentTranslationJob(activeJobRef.current?.id, job.id, abortControllerRef.current?.signal);
+    if (!forceModel) {
+      const memory = await findTranslationMemory(chunk.originalChinese, job.domain, { ...job.glossary }).catch(() => undefined);
+      assertCurrentTranslationJob(activeJobRef.current?.id, job.id, abortControllerRef.current?.signal);
+      if (memory) {
+        return {
+          text: memory,
+          model: "",
+          qa: buildSegmentQaReport(chunk, memory, { ...job.glossary }),
+          translationMemoryHit: true
+        };
+      }
+    }
+    const result = await streamChunkWithRetry(chunk, rollingContext, job);
+    assertCurrentTranslationJob(activeJobRef.current?.id, job.id, abortControllerRef.current?.signal);
+    await rememberTranslation(chunk.originalChinese, result.text, job.domain, { ...job.glossary }).catch(() => undefined);
+    return { ...result, translationMemoryHit: false };
+  };
+
+  const transcribeImageWithRetry = (imageTask: { id: string; pageNumber: number; imageDataUrl: string }, job: TranslationJobSnapshot) =>
     withSmartRetry(
       async (attempt) => {
+        assertCurrentTranslationJob(activeJobRef.current?.id, job.id, abortControllerRef.current?.signal);
         setLiveText("");
         return streamTranslation(
           {
             imageTask: { ...imageTask, mode: "ocr" },
-            provider,
-            model: provider === "openrouter" ? openRouterModel : undefined,
-            userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
-            userOpenRouterApiKey: provider === "openrouter" ? openRouterApiKey || undefined : undefined,
+            provider: job.provider,
+            model: job.model,
+            userPpqApiKey: job.userPpqApiKey,
+            userOpenRouterApiKey: job.userOpenRouterApiKey,
             temperature: Math.min(0.1, attempt * 0.05)
           },
           {
-            onDelta: (delta) => setLiveText((prev) => prev + delta),
+            onDelta: (delta) => {
+              if (activeJobRef.current?.id === job.id) setLiveText((prev) => prev + delta);
+            },
             signal: abortControllerRef.current?.signal
           }
         );
@@ -993,8 +1148,8 @@ export default function HomePage() {
       { maxRetries: 2, validateEnglish: false }
     );
 
-  const handleTranslateDocumentByUnit = async (resume: boolean) => {
-    const pagesToTranslate = selectedDocumentPages;
+  const handleTranslateDocumentByUnit = async (resume: boolean, job: TranslationJobSnapshot) => {
+    const pagesToTranslate = job.pages;
     const completedChunks: TranslationChunk[] = resume ? translatedChunks.filter((chunk) => chunk.translatedEnglish.trim()) : [];
     const completedPages: TranslationPage[] = resume
       ? translationPages.filter((page) => page.translatedText.trim())
@@ -1023,6 +1178,7 @@ export default function HomePage() {
       }
       setStatusMessage("Preparing OCR images from PDF pages...");
       ocrImageMap = await renderPdfPagesToJpegDataUrls(pdfFile, pagesNeedingOcr);
+      assertCurrentTranslationJob(activeJobRef.current?.id, job.id, abortControllerRef.current?.signal);
     }
 
     for (let index = 0; index < pagesToTranslate.length; index += 1) {
@@ -1052,7 +1208,7 @@ export default function HomePage() {
             id: `pdf-ocr-p${page.pageNumber}`,
             pageNumber: page.pageNumber,
             imageDataUrl
-          });
+          }, job);
           ocrText = ocrResult.text.trim();
           if (!ocrText) {
             throw new Error(`No readable text was found on page ${page.pageNumber}.`);
@@ -1071,7 +1227,7 @@ export default function HomePage() {
           originalChinese: ocrText,
           translatedEnglish: ""
         };
-        const { text, model } = await streamChunkWithRetry(sourceChunk, rollingContext);
+        const { text, model, qa, translationMemoryHit } = await translateChunkWithMemory(sourceChunk, rollingContext, job);
 
         if (!text.trim()) {
           throw new Error(`Empty OCR translation output returned for page ${page.pageNumber}.`);
@@ -1081,7 +1237,9 @@ export default function HomePage() {
           id: `pdf-ocr-p${page.pageNumber}`,
           pageNumber: page.pageNumber,
           originalChinese: ocrText,
-          translatedEnglish: text
+          translatedEnglish: text,
+          qa,
+          translationMemoryHit
         };
         const pageResult: TranslationPage = {
           pageNumber: page.pageNumber,
@@ -1096,6 +1254,7 @@ export default function HomePage() {
         setTranslatedChunks([...completedChunks]);
         if (model) setUsedModel(model);
         setCompletedUnits(completedPages.length);
+        completedResultCountRef.current = completedChunks.length;
         rollingContext = makeRollingContext(ocrText, text);
         continue;
       }
@@ -1105,13 +1264,13 @@ export default function HomePage() {
       let pageModel = "";
 
       for (const pageChunk of pageChunks) {
-        const { text, model } = await streamChunkWithRetry(pageChunk, rollingContext);
+        const { text, model, qa, translationMemoryHit } = await translateChunkWithMemory(pageChunk, rollingContext, job);
 
         if (!text.trim()) {
           throw new Error(`Empty translation output returned for page ${page.pageNumber}.`);
         }
 
-        translatedPageChunks.push({ ...pageChunk, translatedEnglish: text });
+        translatedPageChunks.push({ ...pageChunk, translatedEnglish: text, qa, translationMemoryHit });
         if (model) pageModel = model;
         rollingContext = makeRollingContext(pageChunk.originalChinese, text);
       }
@@ -1130,14 +1289,15 @@ export default function HomePage() {
       setTranslatedChunks([...completedChunks]);
       if (pageModel) setUsedModel(pageModel);
       setCompletedUnits(completedPages.length);
+      completedResultCountRef.current = completedChunks.length;
     }
 
     setIsStreaming(false);
     setLiveText("");
   };
 
-  const handleTranslateImage = async (resume: boolean) => {
-    if (!imageDataUrl) {
+  const handleTranslateImage = async (resume: boolean, job: TranslationJobSnapshot) => {
+    if (!job.imageDataUrl) {
       throw new Error("Upload an image to begin translation.");
     }
 
@@ -1149,7 +1309,7 @@ export default function HomePage() {
 
     let ocrText = translationPages[0]?.originalText || "";
     if (!ocrText || ocrText === "[Image-based source text]") {
-      const ocrResult = await transcribeImageWithRetry({ id: "image-ocr-1", pageNumber: 1, imageDataUrl });
+      const ocrResult = await transcribeImageWithRetry({ id: "image-ocr-1", pageNumber: 1, imageDataUrl: job.imageDataUrl }, job);
       ocrText = ocrResult.text.trim();
       if (!ocrText) {
         throw new Error("No readable text was found in this image.");
@@ -1164,7 +1324,7 @@ export default function HomePage() {
       originalChinese: ocrText,
       translatedEnglish: ""
     };
-    const { text, model } = await streamChunkWithRetry(sourceChunk, "");
+    const { text, model, qa, translationMemoryHit } = await translateChunkWithMemory(sourceChunk, "", job);
 
     if (!text.trim()) {
       throw new Error("Empty image translation result.");
@@ -1174,7 +1334,9 @@ export default function HomePage() {
       id: "image-ocr-1",
       pageNumber: 1,
       originalChinese: ocrText,
-      translatedEnglish: text
+      translatedEnglish: text,
+      qa,
+      translationMemoryHit
     };
     setTranslatedChunks([normalizedChunk]);
     setTranslationPages([
@@ -1187,6 +1349,7 @@ export default function HomePage() {
     ]);
     if (model) setUsedModel(model);
     setCompletedUnits(1);
+    completedResultCountRef.current = 1;
     setIsStreaming(false);
     setLiveText("");
   };
@@ -1212,7 +1375,28 @@ export default function HomePage() {
       return;
     }
 
+    const jobChunks = inputMode === "document"
+      ? createChunksFromPdfPages(selectedDocumentPages)
+      : inputMode === "text"
+        ? sourceChunks
+        : [];
+    const job = createTranslationJob({
+      sourceRevision: sourceRevisionRef.current,
+      provider,
+      model: provider === "openrouter" ? openRouterModel : undefined,
+      userPpqApiKey: provider === "ppq" ? activeUserApiKey || undefined : undefined,
+      userOpenRouterApiKey: provider === "openrouter" ? openRouterApiKey || undefined : undefined,
+      domain,
+      glossary: lockedGlossary,
+      chunks: jobChunks,
+      pages: inputMode === "document" ? selectedDocumentPages : [],
+      imageDataUrl: inputMode === "image" ? imageDataUrl : undefined
+    });
+    activeJobRef.current = job;
+
     setProcessing(true);
+    setIsSettingsOpen(false);
+    setIsGlossaryOpen(false);
     setIsPreflightOpen(false);
     setCanResume(false);
     if (!resume) {
@@ -1229,62 +1413,57 @@ export default function HomePage() {
     setProgressStep("preparing");
     setStatusMessage("Preparing chunks & glossary...");
     abortControllerRef.current = new AbortController();
+    completedResultCountRef.current = resume ? translatedChunks.filter((chunk) => chunk.translatedEnglish.trim()).length : 0;
 
     await new Promise((resolve) => setTimeout(resolve, 120));
 
-    // Extract entities for text mode (uploaded documents are extracted on upload).
-    if (inputMode === "text" && sourceChunks.length > 0) {
-      const sampleText = sourceChunks.map((c) => c.originalChinese).join("\n\n");
-      const heuristics = extractEntitiesHeuristic(sampleText);
-      setExtractedEntities(heuristics);
-      fetchEntityTranslations(sampleText);
-    }
-
     try {
+      assertCurrentTranslationJob(activeJobRef.current?.id, job.id, abortControllerRef.current.signal);
       setProgressStep("translating");
 
       if (inputMode === "document") {
-        await handleTranslateDocumentByUnit(resume);
+        await handleTranslateDocumentByUnit(resume, job);
       } else if (inputMode === "image") {
-        await handleTranslateImage(resume);
+        await handleTranslateImage(resume, job);
       } else {
         const completedById = new Map(
           (resume ? translatedChunks : [])
             .filter((chunk) => chunk.translatedEnglish.trim())
             .map((chunk) => [chunk.id, chunk])
         );
-        const completedChunks = sourceChunks
+        const completedChunks = job.chunks
           .map((chunk) => completedById.get(chunk.id))
           .filter((chunk): chunk is TranslationChunk => Boolean(chunk));
         const lastCompletedChunk = completedChunks[completedChunks.length - 1];
         let rollingContext = lastCompletedChunk
           ? makeRollingContext(lastCompletedChunk.originalChinese, lastCompletedChunk.translatedEnglish)
           : "";
-        setTotalUnits(sourceChunks.length);
+        setTotalUnits(job.chunks.length);
         setCompletedUnits(completedChunks.length);
 
-        for (let index = 0; index < sourceChunks.length; index += 1) {
-          const chunk = sourceChunks[index];
+        for (let index = 0; index < job.chunks.length; index += 1) {
+          const chunk = job.chunks[index];
           if (completedById.has(chunk.id)) {
             continue;
           }
-          setStatusMessage(`Translating section ${index + 1} of ${sourceChunks.length}...`);
+          setStatusMessage(`Translating section ${index + 1} of ${job.chunks.length}...`);
           setLiveText("");
           setIsStreaming(true);
 
-          const { text, model } = await streamChunkWithRetry(chunk, rollingContext);
+          const { text, model, qa, translationMemoryHit } = await translateChunkWithMemory(chunk, rollingContext, job);
 
           if (!text.trim()) {
             throw new Error("Empty translation result.");
           }
 
-          completedById.set(chunk.id, { ...chunk, translatedEnglish: text });
-          const nextCompleted = sourceChunks
+          completedById.set(chunk.id, { ...chunk, translatedEnglish: text, qa, translationMemoryHit });
+          const nextCompleted = job.chunks
             .map((sourceChunk) => completedById.get(sourceChunk.id))
             .filter((entry): entry is TranslationChunk => Boolean(entry));
           setTranslatedChunks(nextCompleted);
           if (model) setUsedModel(model);
           setCompletedUnits(nextCompleted.length);
+          completedResultCountRef.current = nextCompleted.length;
           rollingContext = makeRollingContext(chunk.originalChinese, text);
         }
 
@@ -1296,6 +1475,7 @@ export default function HomePage() {
       setStatusMessage("Generating output...");
 
       await new Promise((resolve) => setTimeout(resolve, 280));
+      assertCurrentTranslationJob(activeJobRef.current?.id, job.id, abortControllerRef.current.signal);
 
       setActiveView("english");
       setReviewMode(false);
@@ -1304,20 +1484,26 @@ export default function HomePage() {
       setProgressStep("done");
       setStatusMessage("Translation complete.");
       setTimeout(() => {
-        setStatusMessage("");
-        setProgressStep("idle");
+        if (!activeJobRef.current) {
+          setStatusMessage("");
+          setProgressStep("idle");
+        }
       }, 1200);
     } catch (error) {
+      if (activeJobRef.current?.id !== job.id) return;
       setStatusMessage("");
       setProgressStep("idle");
-      const cancelled = abortControllerRef.current?.signal.aborted;
+      const cancelled = abortControllerRef.current?.signal.aborted || (error instanceof DOMException && error.name === "AbortError");
       setErrorMessage(cancelled ? "Translation paused. Resume when you are ready." : error instanceof Error ? error.message : "Translation failed.");
-      setCanResume(true);
+      setCanResume(Boolean(cancelled || completedResultCountRef.current > 0));
     } finally {
-      setProcessing(false);
-      setIsStreaming(false);
-      setLiveText("");
-      abortControllerRef.current = null;
+      if (activeJobRef.current?.id === job.id) {
+        setProcessing(false);
+        setIsStreaming(false);
+        setLiveText("");
+        abortControllerRef.current = null;
+        activeJobRef.current = null;
+      }
     }
   };
 
@@ -1341,6 +1527,10 @@ export default function HomePage() {
 
   const handleReset = () => {
     abortControllerRef.current?.abort();
+    entityAbortControllerRef.current?.abort();
+    sourceLoadRef.current += 1;
+    sourceRevisionRef.current += 1;
+    activeJobRef.current = null;
     setIsPreflightOpen(false);
     setInputMode("document");
     resetPdfState();
@@ -1412,6 +1602,15 @@ export default function HomePage() {
     }
   };
 
+  const handleDownloadDocx = async () => {
+    try {
+      await downloadBilingualDocx({ chunks: translatedChunks, sourceLabel, model: usedModel });
+      showToast("DOCX downloaded");
+    } catch {
+      setErrorMessage("DOCX export failed.");
+    }
+  };
+
   return (
     <main className="min-h-screen px-4 py-4 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
@@ -1420,7 +1619,9 @@ export default function HomePage() {
           connectionLabel={connectionLabel}
           connectionActive={connectionActive}
           onThemeChange={setTheme}
-          onOpenApiSettings={() => setIsSettingsOpen(true)}
+          onOpenApiSettings={() => {
+            if (!processing) setIsSettingsOpen(true);
+          }}
         />
 
         <div className="grid gap-4 xl:grid-cols-[370px_minmax(0,1fr)] xl:items-start">
@@ -1524,7 +1725,7 @@ export default function HomePage() {
                 <div className="workspace-panel-quiet p-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Glossary</p>
-                    <button type="button" onClick={() => setIsGlossaryOpen(true)} className="secondary-button px-2.5 py-1.5 text-xs">
+                    <button type="button" onClick={() => setIsGlossaryOpen(true)} disabled={processing} className="secondary-button px-2.5 py-1.5 text-xs">
                       Open
                     </button>
                   </div>
@@ -1534,6 +1735,14 @@ export default function HomePage() {
                       {lockedGlossaryCount} locked
                     </span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={handleAnalyzeTerms}
+                    disabled={processing || analyzingTerms || inputMode === "image" || (inputMode === "text" ? !pastedText.trim() : selectedDocumentPages.length === 0)}
+                    className="secondary-button mt-3 w-full text-xs"
+                  >
+                    {analyzingTerms ? "Analyzing terms…" : "Analyze terms with AI"}
+                  </button>
                   {lockedGlossaryCount > 0 ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {glossaryEntries
@@ -1623,6 +1832,7 @@ export default function HomePage() {
                       <ExportButtons
                         onCopy={handleCopyEnglish}
                         onDownloadHtml={handleDownloadHtml}
+                        onDownloadDocx={() => void handleDownloadDocx()}
                         onDownloadTxt={handleDownloadTxt}
                         onDownloadPdf={handleDownloadPdf}
                         copied={toastVisible && toastMessage === "Copied to clipboard."}
@@ -1829,6 +2039,8 @@ export default function HomePage() {
                           approvedChunkIds={approvedChunkIds}
                           onCommit={commitTranslationEdit}
                           onToggleApproved={toggleChunkApproved}
+                          onRetranslate={retranslateChunk}
+                          onNoteChange={updateReviewNote}
                         />
                       ) : (
                         <article className={`reader-card mx-auto w-full ${readingWidthClass} p-6 sm:p-8`}>
@@ -1957,6 +2169,7 @@ export default function HomePage() {
         extracted={extractedEntities}
         entries={glossaryEntries}
         onEntriesChange={handleGlossaryEntriesChange}
+        onDismissExtracted={(chinese) => setExtractedEntities((entities) => entities.filter((entity) => entity.chinese !== chinese))}
         open={isGlossaryOpen}
         onClose={() => setIsGlossaryOpen(false)}
       />

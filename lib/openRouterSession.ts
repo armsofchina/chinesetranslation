@@ -1,12 +1,57 @@
 import "server-only";
 
-import { createHash, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 
 export const OPENROUTER_PKCE_COOKIE = "translation_vibe_openrouter_pkce";
+export const OPENROUTER_SESSION_COOKIE = "translation_vibe_openrouter_session";
 
 export type OpenRouterPkceSession = {
   verifier: string;
   createdAt: number;
+};
+
+export type OpenRouterSession = {
+  apiKey: string;
+  userId?: string;
+  connectedAt: number;
+};
+
+const getSessionKey = (): Buffer => {
+  const secret = process.env.OPENROUTER_SESSION_SECRET?.trim() || process.env.APP_SESSION_SECRET?.trim();
+  if (!secret && process.env.NODE_ENV === "production") {
+    throw new Error("OPENROUTER_SESSION_SECRET must be configured in production.");
+  }
+  return createHash("sha256").update(secret || "translation-vibe-development-only-secret").digest();
+};
+
+export const sealOpenRouterSession = (session: OpenRouterSession): string => {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", getSessionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(session), "utf8"), cipher.final()]);
+  return [iv, cipher.getAuthTag(), ciphertext].map((value) => value.toString("base64url")).join(".");
+};
+
+export const parseOpenRouterSession = (value?: string): OpenRouterSession | undefined => {
+  if (!value || value.length > 6_000) return undefined;
+  try {
+    const [ivValue, tagValue, ciphertextValue] = value.split(".");
+    if (!ivValue || !tagValue || !ciphertextValue) return undefined;
+    const decipher = createDecipheriv("aes-256-gcm", getSessionKey(), Buffer.from(ivValue, "base64url"));
+    decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+    const plaintext = Buffer.concat([
+      decipher.update(Buffer.from(ciphertextValue, "base64url")),
+      decipher.final()
+    ]).toString("utf8");
+    const parsed = JSON.parse(plaintext) as Partial<OpenRouterSession>;
+    if (typeof parsed.apiKey !== "string" || !parsed.apiKey.trim() || typeof parsed.connectedAt !== "number") return undefined;
+    return {
+      apiKey: parsed.apiKey,
+      connectedAt: parsed.connectedAt,
+      userId: typeof parsed.userId === "string" ? parsed.userId : undefined
+    };
+  } catch {
+    return undefined;
+  }
 };
 
 export const serializeOpenRouterPkceSession = (session: OpenRouterPkceSession): string =>
@@ -39,6 +84,14 @@ export const createPkceChallenge = (verifier: string): string =>
   createHash("sha256").update(verifier).digest("base64url");
 
 export const getOpenRouterPkceCookieOptions = (maxAge: number) => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge
+});
+
+export const getOpenRouterSessionCookieOptions = (maxAge = 30 * 24 * 60 * 60) => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,

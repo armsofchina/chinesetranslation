@@ -4,7 +4,7 @@ import {
   OpenRouterModelOption
 } from "@/lib/openRouterModels";
 
-export const revalidate = 15 * 60;
+export const revalidate = 900;
 export const dynamic = "force-dynamic";
 
 type OpenRouterCatalogModel = {

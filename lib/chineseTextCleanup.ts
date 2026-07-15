@@ -27,25 +27,25 @@ export const cleanExtractedChineseText = (text: string): string => {
     .replace(/\n{3,}/g, "\n\n");
 
   // Remove extraction artifacts between Chinese characters.
-  cleaned = cleaned.replace(new RegExp(`(${HAN_CLASS})\\s+(${HAN_CLASS})`, "gu"), "$1$2");
+  cleaned = cleaned.replace(new RegExp(`(?<=${HAN_CLASS}) +(?=${HAN_CLASS})`, "gu"), "");
   // Remove artificial spacing between Chinese and ASCII alphanumerics.
-  cleaned = cleaned.replace(new RegExp(`(${HAN_CLASS})\\s+([${ALNUM_CLASS}])`, "gu"), "$1$2");
-  cleaned = cleaned.replace(new RegExp(`([${ALNUM_CLASS}])\\s+(${HAN_CLASS})`, "gu"), "$1$2");
+  cleaned = cleaned.replace(new RegExp(`(?<=${HAN_CLASS}) +(?=[${ALNUM_CLASS}])`, "gu"), "");
+  cleaned = cleaned.replace(new RegExp(`(?<=[${ALNUM_CLASS}]) +(?=${HAN_CLASS})`, "gu"), "");
   // Join split numbers (e.g. "2 0 1 8" -> "2018").
-  cleaned = cleaned.replace(/([0-9])\s+([0-9])/g, "$1$2");
+  cleaned = cleaned.replace(/(?<=[0-9]) +(?=[0-9])/g, "");
   // Remove spacing between Chinese text and circled/superscript note markers.
   cleaned = cleaned.replace(
-    new RegExp(`(${HAN_CLASS}|[。！？；：，、）】》〉」』])\\s+([${CIRCLED_OR_SUPERSCRIPT_NUMBER_CLASS}])`, "gu"),
+    new RegExp(`(${HAN_CLASS}|[。！？；：，、）】》〉」』]) +([${CIRCLED_OR_SUPERSCRIPT_NUMBER_CLASS}])`, "gu"),
     "$1$2"
   );
   cleaned = cleaned.replace(
-    new RegExp(`([${CIRCLED_OR_SUPERSCRIPT_NUMBER_CLASS}])\\s+(${HAN_CLASS})`, "gu"),
+    new RegExp(`([${CIRCLED_OR_SUPERSCRIPT_NUMBER_CLASS}]) +(${HAN_CLASS})`, "gu"),
     "$1$2"
   );
   // Remove spaces before punctuation and after opening punctuation.
   cleaned = cleaned
-    .replace(/\s+([，。！？；：、,.!?;:）】》〉」』])/g, "$1")
-    .replace(/([（【《〈「『])\s+/g, "$1");
+    .replace(/ +([，。！？；：、,.!?;:）】》〉」』])/g, "$1")
+    .replace(/([（【《〈「『]) +/g, "$1");
 
   return cleaned
     .split("\n")

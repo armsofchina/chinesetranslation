@@ -5,30 +5,17 @@ import {
   streamTranslate,
   streamTranslateImage
 } from "@/lib/openAiCompatible";
-import { AiProviderId, normalizeAiProvider } from "@/lib/aiProviders";
+import { normalizeAiProvider } from "@/lib/aiProviders";
 import { normalizeTranslationFootnotes } from "@/lib/footnotes";
-import { TranslationDomain } from "@/lib/prompts";
 import {
   getMissingProviderKeyMessage,
   resolveProviderContext,
   toProviderFriendlyError
 } from "@/lib/providerServer";
 import { checkRateLimit, getRequestClientKey } from "@/lib/rateLimit";
-import { TranslateImageTask, TranslationChunk } from "@/lib/types";
-
-type StreamRequestBody = {
-  chunk?: TranslationChunk;
-  imageTask?: TranslateImageTask;
-  provider?: AiProviderId;
-  userApiKey?: string;
-  userPpqApiKey?: string;
-  userOpenRouterApiKey?: string;
-  model?: string;
-  domain?: TranslationDomain;
-  previousSummary?: string;
-  glossary?: Record<string, string>;
-  temperature?: number;
-};
+import { buildSegmentQaReport } from "@/lib/segmentQa";
+import { validateStreamRequest } from "@/lib/translateRequest";
+import { OPENROUTER_SESSION_COOKIE, parseOpenRouterSession } from "@/lib/openRouterSession";
 
 export const runtime = "nodejs";
 
@@ -36,6 +23,10 @@ const sseEvent = (event: string, data: unknown): string =>
   `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
 export async function POST(request: NextRequest) {
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > 22_500_000) {
+    return Response.json({ error: "Request body is too large." }, { status: 413 });
+  }
   const rateLimit = checkRateLimit(`translate:${getRequestClientKey(request.headers)}`, {
     limit: 120,
     windowMs: 60_000
@@ -50,41 +41,19 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const body = (await request.json().catch(() => null)) as StreamRequestBody | null;
-
-  const chunk = body?.chunk;
-  const imageTask = body?.imageTask;
-
-  if (!chunk && !imageTask) {
-    return new Response(JSON.stringify({ error: "No text or image input provided." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" }
-    });
+  let body: ReturnType<typeof validateStreamRequest>;
+  try {
+    body = validateStreamRequest(await request.json());
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Invalid request." }, { status: 400 });
+  }
+  const { chunk, imageTask } = body;
+  if (body.provider === "openrouter" && !body.userOpenRouterApiKey) {
+    body.userOpenRouterApiKey = parseOpenRouterSession(request.cookies.get(OPENROUTER_SESSION_COOKIE)?.value)?.apiKey;
   }
 
-  if (chunk?.originalChinese && chunk.originalChinese.length > 20_000) {
-    return new Response(JSON.stringify({ error: "This translation segment is too large." }), {
-      status: 413,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-
-  if (imageTask?.imageDataUrl && imageTask.imageDataUrl.length > 22_000_000) {
-    return new Response(JSON.stringify({ error: "This OCR image is too large." }), {
-      status: 413,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-
-  if (body?.glossary && Object.keys(body.glossary).length > 500) {
-    return new Response(JSON.stringify({ error: "The glossary is too large for one request." }), {
-      status: 413,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-
-  const providerId = normalizeAiProvider(body?.provider);
-  const provider = resolveProviderContext(body || {});
+  const providerId = normalizeAiProvider(body.provider);
+  const provider = resolveProviderContext(body);
   if (!provider) {
     return new Response(
       JSON.stringify({
@@ -94,13 +63,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const domain = body?.domain || "general";
-  const previousSummary = body?.previousSummary;
-  const glossary = body?.glossary;
-  const temperature = typeof body?.temperature === "number" ? Math.max(0, Math.min(body.temperature, 1)) : undefined;
+  const { domain, previousSummary, glossary, temperature } = body;
 
   const encoder = new TextEncoder();
   const upstreamController = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    upstreamController.abort();
+  }, 120_000);
   let streamClosed = false;
   const abortUpstream = () => upstreamController.abort();
   if (request.signal.aborted) {
@@ -170,11 +141,19 @@ export async function POST(request: NextRequest) {
         }
 
         const normalized = normalizeTranslationFootnotes(full);
-        send("done", { text: normalized, model: usedModel, provider: provider.id });
+        const qa = chunk ? buildSegmentQaReport(chunk, normalized, glossary) : undefined;
+        send("done", {
+          text: normalized,
+          model: usedModel,
+          provider: provider.id,
+          segment: chunk ? { id: chunk.id, pageNumber: chunk.pageNumber, qa } : undefined
+        });
       } catch (error) {
-        if (!upstreamController.signal.aborted) {
+        if (!request.signal.aborted) {
           const message =
-            error instanceof ProviderRequestError
+            timedOut
+              ? `${provider.label} did not respond within two minutes.`
+              : error instanceof ProviderRequestError
               ? toProviderFriendlyError(provider, error.status, error.message)
               : `${provider.label} translation failed.`;
           send("error", {
@@ -183,6 +162,7 @@ export async function POST(request: NextRequest) {
           });
         }
       } finally {
+        clearTimeout(timeout);
         request.signal.removeEventListener("abort", abortUpstream);
         if (!streamClosed) {
           streamClosed = true;

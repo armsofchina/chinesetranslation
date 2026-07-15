@@ -11,6 +11,8 @@ type TranslationEditorProps = {
   approvedChunkIds: string[];
   onCommit: (chunkId: string, translatedEnglish: string) => void;
   onToggleApproved: (chunkId: string) => void;
+  onRetranslate: (chunkId: string) => Promise<void>;
+  onNoteChange: (chunkId: string, note: string) => void;
 };
 
 function SegmentEditor({
@@ -18,15 +20,20 @@ function SegmentEditor({
   issues,
   approved,
   onCommit,
-  onToggleApproved
+  onToggleApproved,
+  onRetranslate,
+  onNoteChange
 }: {
   chunk: TranslationChunk;
   issues: TranslationQualityIssue[];
   approved: boolean;
   onCommit: (chunkId: string, translatedEnglish: string) => void;
   onToggleApproved: (chunkId: string) => void;
+  onRetranslate: (chunkId: string) => Promise<void>;
+  onNoteChange: (chunkId: string, note: string) => void;
 }) {
   const [draft, setDraft] = useState(chunk.translatedEnglish);
+  const [retranslating, setRetranslating] = useState(false);
 
   useEffect(() => {
     setDraft(chunk.translatedEnglish);
@@ -56,18 +63,32 @@ function SegmentEditor({
               {issue.code}
             </span>
           ))}
+          {chunk.translationMemoryHit ? <span className="status-pill bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-200">TM match</span> : null}
         </div>
-        <button
-          type="button"
-          onClick={() => onToggleApproved(chunk.id)}
-          className={`secondary-button px-3 py-1.5 text-xs ${
-            approved
-              ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
-              : ""
-          }`}
-        >
-          {approved ? "Approved" : "Mark approved"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={retranslating}
+            onClick={() => {
+              setRetranslating(true);
+              void onRetranslate(chunk.id).finally(() => setRetranslating(false));
+            }}
+            className="secondary-button px-3 py-1.5 text-xs"
+          >
+            {retranslating ? "Retranslating…" : "Retranslate"}
+          </button>
+          <button
+            type="button"
+            onClick={() => onToggleApproved(chunk.id)}
+            className={`secondary-button px-3 py-1.5 text-xs ${
+              approved
+                ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+                : ""
+            }`}
+          >
+            {approved ? "Approved" : "Mark approved"}
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -93,6 +114,29 @@ function SegmentEditor({
           ))}
         </ul>
       ) : null}
+      {chunk.qa && (chunk.qa.facts.length > 0 || chunk.qa.terms.length > 0) ? (
+        <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+          {chunk.qa.facts.map((fact) => (
+            <span key={`${fact.kind}-${fact.normalized}`} className={`status-pill ${fact.matched ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}>
+              {fact.kind}: {fact.source} {fact.matched ? "✓" : "missing"}
+            </span>
+          ))}
+          {chunk.qa.terms.map((term) => (
+            <span key={term.chinese} className={`status-pill ${term.matched ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}`}>
+              {term.chinese} → {term.expectedEnglish} {term.matched ? "✓" : "review"}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <label className="mt-3 block">
+        <span className="eyebrow mb-1.5 block">Reviewer note</span>
+        <input
+          value={chunk.reviewNote || ""}
+          onChange={(event) => onNoteChange(chunk.id, event.target.value)}
+          placeholder="Add a note for this segment…"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+        />
+      </label>
     </article>
   );
 }
@@ -102,7 +146,9 @@ export default function TranslationEditor({
   issues,
   approvedChunkIds,
   onCommit,
-  onToggleApproved
+  onToggleApproved,
+  onRetranslate,
+  onNoteChange
 }: TranslationEditorProps) {
   return (
     <section className="space-y-4">
@@ -114,6 +160,8 @@ export default function TranslationEditor({
           approved={approvedChunkIds.includes(chunk.id)}
           onCommit={onCommit}
           onToggleApproved={onToggleApproved}
+          onRetranslate={onRetranslate}
+          onNoteChange={onNoteChange}
         />
       ))}
     </section>

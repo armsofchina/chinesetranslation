@@ -44,7 +44,9 @@ export const resolveProviderContext = (
     if (!apiKey) {
       return undefined;
     }
-    const model = requestedModel || process.env.OPENROUTER_MODEL?.trim() || "openrouter/free";
+    const allowedModels = process.env.OPENROUTER_ALLOWED_MODELS?.split(",").map((value) => value.trim()).filter(Boolean);
+    const requestedModelAllowed = !requestedModel || !allowedModels?.length || allowedModels.includes(requestedModel);
+    const model = (requestedModelAllowed ? requestedModel : undefined) || process.env.OPENROUTER_MODEL?.trim() || "openrouter/free";
     return {
       id,
       label: AI_PROVIDER_LABELS[id],

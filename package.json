@@ -9,12 +9,14 @@
     "prebuild": "node scripts/copy-pdf-worker.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.mjs"
   },
   "dependencies": {
-    "jspdf": "^2.5.2",
+    "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
-    "next": "^14.2.33",
+    "next": "^15.5.20",
     "pdfjs-dist": "^4.5.136",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
@@ -24,8 +26,11 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "^15.5.20",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.10",
+    "tsx": "^4.23.0",
     "typescript": "^5.5.4"
   }
 }

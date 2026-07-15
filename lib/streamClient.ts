@@ -1,6 +1,6 @@
 import { AiProviderId } from "@/lib/aiProviders";
 import { TranslationDomain } from "@/lib/prompts";
-import { TranslateImageTask, TranslationChunk } from "@/lib/types";
+import { SegmentQaReport, TranslateImageTask, TranslationChunk } from "@/lib/types";
 
 type StreamHandlers = {
   onStart?: (model: string) => void;
@@ -11,6 +11,7 @@ type StreamHandlers = {
 type StreamResult = {
   text: string;
   model: string;
+  qa?: SegmentQaReport;
 };
 
 type StreamPayloadBase = {
@@ -65,6 +66,7 @@ export const streamTranslation = async (
   let model = "";
   let errorMessage = "";
   let errorStatus = 0;
+  let qa: SegmentQaReport | undefined;
 
   const processEvent = (rawEvent: string) => {
     const lines = rawEvent.split("\n");
@@ -83,15 +85,23 @@ export const streamTranslation = async (
       return;
     }
 
-    let data: any;
+    let data: {
+      model?: unknown;
+      text?: unknown;
+      error?: unknown;
+      status?: unknown;
+      segment?: { qa?: unknown };
+    };
     try {
-      data = JSON.parse(dataStr);
+      const parsed: unknown = JSON.parse(dataStr);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+      data = parsed as typeof data;
     } catch {
       return;
     }
 
     if (eventName === "start") {
-      model = data.model || model;
+      model = typeof data.model === "string" ? data.model : model;
       handlers.onStart?.(model);
     } else if (eventName === "delta") {
       if (typeof data.text === "string") {
@@ -99,9 +109,13 @@ export const streamTranslation = async (
       }
     } else if (eventName === "done") {
       finalText = typeof data.text === "string" ? data.text : finalText;
-      model = data.model || model;
+      model = typeof data.model === "string" ? data.model : model;
+      const report = data.segment?.qa;
+      if (report && typeof report === "object" && "version" in report && report.version === 1 && "segmentId" in report && typeof report.segmentId === "string" && "warnings" in report && Array.isArray(report.warnings)) {
+        qa = report as SegmentQaReport;
+      }
     } else if (eventName === "error") {
-      errorMessage = data.error || "Translation API failed.";
+      errorMessage = typeof data.error === "string" ? data.error : "Translation API failed.";
       errorStatus = typeof data.status === "number" ? data.status : 0;
     }
   };
@@ -131,5 +145,5 @@ export const streamTranslation = async (
     throw new TranslationStreamError(errorMessage, errorStatus);
   }
 
-  return { text: finalText, model };
+  return { text: finalText, model, qa };
 };

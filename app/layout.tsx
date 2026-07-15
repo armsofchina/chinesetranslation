@@ -1,9 +1,5 @@
 import type { Metadata } from "next";
-import { Manrope, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
-
-const manrope = Manrope({ subsets: ["latin"], variable: "--font-ui" });
-const sourceSerif = Source_Serif_4({ subsets: ["latin"], variable: "--font-doc" });
 
 const themeInitScript = `
 (() => {
@@ -31,7 +27,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body className={`${manrope.variable} ${sourceSerif.variable}`}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }

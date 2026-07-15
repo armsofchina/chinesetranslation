@@ -6,6 +6,8 @@
   color-scheme: light;
   --page-bg: #f6f7f9;
   --page-bg-dark: #090b10;
+  --font-ui: "Avenir Next", "Segoe UI", Arial, sans-serif;
+  --font-doc: Georgia, "Times New Roman", serif;
 }
 
 .dark:root {

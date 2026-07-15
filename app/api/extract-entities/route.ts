@@ -4,6 +4,7 @@ import { extractEntitiesWithLlm } from "@/lib/extractEntities";
 import { TranslationDomain } from "@/lib/prompts";
 import { getMissingProviderKeyMessage, resolveProviderContext } from "@/lib/providerServer";
 import { checkRateLimit, getRequestClientKey } from "@/lib/rateLimit";
+import { OPENROUTER_SESSION_COOKIE, parseOpenRouterSession } from "@/lib/openRouterSession";
 
 export const runtime = "nodejs";
 
@@ -33,6 +34,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Source text is too large for glossary extraction." }, { status: 413 });
     }
 
+    if (providerId === "openrouter" && !body.userOpenRouterApiKey) {
+      body.userOpenRouterApiKey = parseOpenRouterSession(request.cookies.get(OPENROUTER_SESSION_COOKIE)?.value)?.apiKey;
+    }
     const provider = resolveProviderContext(body || {});
     if (!provider) {
       return NextResponse.json(

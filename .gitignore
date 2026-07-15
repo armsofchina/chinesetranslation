@@ -4,3 +4,7 @@ node_modules/
 *.log
 .DS_Store
 public/pdf.worker.min.mjs
+ssh
+*.pem
+id_rsa
+id_ed25519

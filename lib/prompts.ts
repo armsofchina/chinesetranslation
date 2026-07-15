@@ -141,7 +141,7 @@ export const buildTranslationMessages = (input: TranslationContextInput): Array<
 /**
  * Builds the vision/OCR translation messages with the same context support.
  */
-export const buildVisionTranslationMessages = (input: TranslationContextInput): Array<{ role: "system" | "user"; content: unknown }> => {
+export const buildVisionTranslationMessages = (input: TranslationContextInput & { imageDataUrl: string }): Array<{ role: "system" | "user"; content: unknown }> => {
   const system = getVisionSystemPrompt(input.domain);
 
   let userText = "Translate all readable Chinese text in this image into clean English.";
@@ -163,7 +163,7 @@ export const buildVisionTranslationMessages = (input: TranslationContextInput): 
       role: "user",
       content: [
         { type: "text", text: userText },
-        { type: "image_url", image_url: { url: (input as any).imageDataUrl || "" } }
+        { type: "image_url", image_url: { url: input.imageDataUrl } }
       ]
     }
   ];
