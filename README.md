@@ -10,6 +10,9 @@ A polished Next.js MVP for translating Traditional and Simplified Chinese text i
 - OCR + translate scanned/image-only PDF pages using PPQ vision models
 - Upload images (PNG/JPG/WEBP/BMP/TIFF) and translate non-selectable text
 - Paste Chinese text directly and translate without uploading files
+- Drag and drop anywhere in the window: documents, images, `.txt`/`.md` files, and selected text are routed to the right input mode automatically
+- Paste anywhere with Cmd/Ctrl+V (clipboard text or screenshots) and start translating with Cmd/Ctrl+Enter
+- Mobile-friendly layout with a sticky translate action bar and inline extraction progress
 - Translate through PPQ using a secure backend route
 - Use default server API key or optional user-provided PPQ key
 - Switch between Original Chinese, English Translation, and Side-by-side views

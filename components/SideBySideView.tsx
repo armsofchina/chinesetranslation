@@ -124,7 +124,7 @@ export default function SideBySideView({ chunks, unitLabel = "Section" }: SideBy
 
   return (
     <div ref={viewerRef} className="space-y-4">
-      <div className="sticky top-2 z-10 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+      <div className="z-10 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 md:sticky md:top-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <PageJumpControl
             currentPage={currentPage}

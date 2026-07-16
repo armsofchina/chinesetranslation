@@ -201,7 +201,7 @@ export default function PdfSideBySideView({
 
   return (
     <section className="space-y-3">
-      <div className="sticky top-4 z-10 rounded-xl border border-slate-200 bg-white/95 p-2.5 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+      <div className="z-10 rounded-xl border border-slate-200 bg-white/95 p-2.5 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 md:sticky md:top-4">
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"

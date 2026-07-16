@@ -1,15 +1,77 @@
 "use client";
 
+import { useId, useState } from "react";
+
 type EmptyStateProps = {
-  title: string;
-  description: string;
+  onFileDrop: (file: File) => void;
+  onTextDrop: (text: string) => void;
+  onPasteText: () => void;
 };
 
-export default function EmptyState({ title, description }: EmptyStateProps) {
+export default function EmptyState({ onFileDrop, onTextDrop, onPasteText }: EmptyStateProps) {
+  const inputId = useId();
+  const [isDragging, setIsDragging] = useState(false);
+
   return (
-    <section className="rounded-2xl bg-white/60 px-6 py-14 text-center dark:bg-slate-900/50">
-      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{title}</p>
-      <p className="mx-auto mt-2 max-w-lg text-xs leading-relaxed text-slate-400 dark:text-slate-500">{description}</p>
+    <section
+      onDragOver={(event) => {
+        event.preventDefault();
+        setIsDragging(true);
+      }}
+      onDragLeave={() => setIsDragging(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        setIsDragging(false);
+        const file = event.dataTransfer.files?.[0];
+        if (file) {
+          onFileDrop(file);
+          return;
+        }
+        const text = event.dataTransfer.getData("text/plain");
+        if (text.trim()) {
+          onTextDrop(text);
+        }
+      }}
+      className={`workspace-panel flex min-h-[520px] items-center justify-center border-dashed p-8 text-center transition ${
+        isDragging
+          ? "border-sky-400 bg-sky-50/70 dark:border-sky-500 dark:bg-sky-950/20"
+          : ""
+      }`}
+    >
+      <input
+        id={inputId}
+        type="file"
+        accept=".pdf,.docx,.epub,.pptx,.txt,.md,application/pdf,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown,image/png,image/jpeg,image/webp,image/bmp,image/tiff"
+        className="sr-only"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) {
+            onFileDrop(file);
+          }
+          event.target.value = "";
+        }}
+      />
+      <div className="mx-auto max-w-md">
+        <p className="eyebrow">Workspace</p>
+        <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-slate-50">
+          {isDragging ? "Drop to load your source" : "Load a source to begin"}
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+          Drag a PDF, DOCX, EPUB, PowerPoint, image, or .txt file anywhere on this
+          page, drop selected text from another app, or paste Chinese text directly.
+        </p>
+        <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">
+          <label htmlFor={inputId} className="primary-button w-full cursor-pointer px-4 py-2.5 text-sm sm:w-auto">
+            Choose a file
+          </label>
+          <button type="button" onClick={onPasteText} className="secondary-button w-full px-4 py-2.5 text-sm sm:w-auto">
+            Paste text
+          </button>
+        </div>
+        <p className="mt-3 text-[11px] leading-4 text-slate-400 dark:text-slate-500">
+          Tip: press Cmd/Ctrl+V anywhere to paste text or a screenshot.
+        </p>
+      </div>
     </section>
   );
 }

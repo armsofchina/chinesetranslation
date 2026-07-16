@@ -10,6 +10,7 @@ export default function TextInputPanel({ value, onChange, onClear }: TextInputPa
   return (
     <section>
       <textarea
+        id="source-text-input"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Paste Traditional or Simplified Chinese text here..."

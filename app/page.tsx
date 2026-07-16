@@ -7,6 +7,8 @@ import ChineseSourceBody from "@/components/ChineseSourceBody";
 import DocumentSourceView from "@/components/DocumentSourceView";
 import DocumentRangeSelector from "@/components/DocumentRangeSelector";
 import DomainSelector from "@/components/DomainSelector";
+import DropZoneOverlay from "@/components/DropZoneOverlay";
+import EmptyState from "@/components/EmptyState";
 import EntityGlossary, { GlossaryEntry } from "@/components/EntityGlossary";
 import ErrorState from "@/components/ErrorState";
 import ExportButtons from "@/components/ExportButtons";
@@ -103,6 +105,19 @@ const makeRollingContext = (source: string, translation: string, maxLen = 800): 
   return combined.length <= maxLen ? combined : combined.slice(-maxLen);
 };
 
+/** True at the Tailwind `lg` breakpoint and above. Starts false so SSR/first paint match mobile. */
+const useIsLargeScreen = (): boolean => {
+  const [isLargeScreen, setIsLargeScreen] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1024px)");
+    const update = () => setIsLargeScreen(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return isLargeScreen;
+};
+
 export default function HomePage() {
   const [theme, setTheme] = useState<ThemePreference>("system");
   const [inputMode, setInputMode] = useState<InputMode>("document");
@@ -165,6 +180,7 @@ export default function HomePage() {
 
   const [toastMessage, setToastMessage] = useState("");
   const [toastVisible, setToastVisible] = useState(false);
+  const isLargeScreen = useIsLargeScreen();
   const abortControllerRef = useRef<AbortController | null>(null);
   const entityAbortControllerRef = useRef<AbortController | null>(null);
   const activeJobRef = useRef<TranslationJobSnapshot | null>(null);
@@ -456,6 +472,15 @@ export default function HomePage() {
   const translateDisabled =
     processing ||
     (inputMode === "document" ? selectedDocumentPages.length === 0 : inputMode === "image" ? !imageDataUrl : sourceChunks.length === 0);
+  const translateButtonLabel = canResume && !translationStale
+    ? "Resume translation"
+    : translationStale
+      ? "Update translation"
+      : inputMode === "document" && documentFormat === "pdf" && selectedOcrPageCount > 0
+        ? selectedOcrPageCount === selectedDocumentPages.length
+          ? "Translate with OCR"
+          : "Translate text + OCR"
+        : "Translate to English";
   const usingCustomKey = Boolean(activeUserApiKey.trim());
   const connectionActive = provider === "openrouter" ? openRouterConnection.connected : usingCustomKey;
   const connectionLabel = provider === "openrouter"
@@ -979,6 +1004,76 @@ export default function HomePage() {
       setErrorMessage("Unable to load this image.");
       resetImageState();
     }
+  };
+
+  /** Loads dropped/pasted plain text as the current source. Returns false for empty text. */
+  const applyDroppedText = (text: string): boolean => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return false;
+    }
+    entityAbortControllerRef.current?.abort();
+    markTranslationStale();
+    setErrorMessage("");
+    setTranslatedChunks([]);
+    setTranslationPages([]);
+    setExtractedEntities([]);
+    resetPdfState();
+    resetImageState();
+    setInputMode("text");
+    setPastedText(trimmed);
+    setActiveView("original");
+    setApprovedChunkIds([]);
+    setTranslationStale(false);
+    setCanResume(false);
+    setSourcePanelOpen(false);
+    return true;
+  };
+
+  const handleDroppedText = (text: string) => {
+    if (processing || !text.trim()) {
+      return;
+    }
+    sourceLoadRef.current += 1;
+    applyDroppedText(text);
+  };
+
+  const handleDroppedTextFile = async (file: File) => {
+    if (file.size > MAX_DOCUMENT_BYTES) {
+      setErrorMessage("Text files must be 50 MB or smaller.");
+      return;
+    }
+    const loadId = ++sourceLoadRef.current;
+    try {
+      const text = await file.text();
+      if (loadId !== sourceLoadRef.current) {
+        return;
+      }
+      if (!applyDroppedText(text)) {
+        setErrorMessage("This text file is empty.");
+      }
+    } catch {
+      if (loadId === sourceLoadRef.current) {
+        setErrorMessage("Unable to read this text file.");
+      }
+    }
+  };
+
+  /** Routes any dropped file to the right input mode, regardless of the active tab. */
+  const handleDroppedFile = async (file: File) => {
+    if (processing) {
+      return;
+    }
+    if (file.type.startsWith("image/")) {
+      await handleImageSelect(file);
+      return;
+    }
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (file.type === "text/plain" || extension === "txt" || extension === "md" || extension === "markdown") {
+      await handleDroppedTextFile(file);
+      return;
+    }
+    await handleFileSelect(file);
   };
 
   const handleSaveApiKey = () => {
@@ -1572,6 +1667,60 @@ export default function HomePage() {
     void runTranslation();
   };
 
+  /** Latest values for window-level listeners, so they never go stale or re-subscribe. */
+  const globalActionRef = useRef({ processing, translateDisabled, handleImageSelect, handleDroppedText, handleTranslate });
+  useEffect(() => {
+    globalActionRef.current = { processing, translateDisabled, handleImageSelect, handleDroppedText, handleTranslate };
+  });
+
+  // Paste-anywhere (text or screenshots) and Cmd/Ctrl+Enter to translate.
+  useEffect(() => {
+    const handleWindowPaste = (event: ClipboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return;
+      }
+      const actions = globalActionRef.current;
+      if (actions.processing) {
+        return;
+      }
+      const clipboard = event.clipboardData;
+      if (!clipboard) {
+        return;
+      }
+      const imageFile = Array.from(clipboard.files).find((file) => file.type.startsWith("image/"));
+      if (imageFile) {
+        event.preventDefault();
+        void actions.handleImageSelect(imageFile);
+        return;
+      }
+      const text = clipboard.getData("text/plain");
+      if (text.trim()) {
+        event.preventDefault();
+        actions.handleDroppedText(text);
+      }
+    };
+
+    const handleWindowKeydown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") {
+        return;
+      }
+      const actions = globalActionRef.current;
+      if (actions.processing || actions.translateDisabled) {
+        return;
+      }
+      event.preventDefault();
+      actions.handleTranslate();
+    };
+
+    window.addEventListener("paste", handleWindowPaste);
+    window.addEventListener("keydown", handleWindowKeydown);
+    return () => {
+      window.removeEventListener("paste", handleWindowPaste);
+      window.removeEventListener("keydown", handleWindowKeydown);
+    };
+  }, []);
+
   const handleCancelTranslation = () => {
     setStatusMessage("Pausing translation...");
     abortControllerRef.current?.abort();
@@ -1664,7 +1813,7 @@ export default function HomePage() {
   };
 
   return (
-    <main className="min-h-screen px-4 py-4 sm:px-6 lg:px-8">
+    <main className="min-h-screen px-4 pb-24 pt-4 sm:px-6 lg:px-8 xl:pb-4">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
         <AppHeader
           theme={theme}
@@ -1686,9 +1835,9 @@ export default function HomePage() {
                   <h2 className="mt-1 text-lg font-semibold text-slate-950 dark:text-slate-50">Add content</h2>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={hasSourceLoaded ? "status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200" : "status-pill"}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${hasSourceLoaded ? "bg-emerald-500" : "bg-slate-400"}`} />
-                    {hasSourceLoaded ? "Ready" : "Waiting"}
+                  <span className={progressStep === "extracting" ? "status-pill bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200" : hasSourceLoaded ? "status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200" : "status-pill"}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${progressStep === "extracting" ? "animate-pulse bg-amber-500" : hasSourceLoaded ? "bg-emerald-500" : "bg-slate-400"}`} />
+                    {progressStep === "extracting" ? "Extracting" : hasSourceLoaded ? "Ready" : "Waiting"}
                   </span>
                   {hasSourceLoaded ? (
                     <button
@@ -1725,8 +1874,12 @@ export default function HomePage() {
               ) : null}
 
               <div className="workspace-panel-quiet mt-4 p-3">
-                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{sourceSummary.title}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{sourceSummary.detail}</p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {progressStep === "extracting" ? "Extracting text from your file…" : sourceSummary.title}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  {progressStep === "extracting" ? statusMessage || "Reading the document…" : sourceSummary.detail}
+                </p>
                 <div className="mt-3 grid gap-2 border-t border-slate-200 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
                   <div className="flex items-center justify-between gap-3">
                     <span>Input</span>
@@ -1824,15 +1977,7 @@ export default function HomePage() {
                 </button>
               ) : (
                 <button type="button" onClick={handleTranslate} disabled={translateDisabled} className="primary-button w-full gap-2">
-                  {canResume && !translationStale
-                    ? "Resume translation"
-                    : translationStale
-                      ? "Update translation"
-                      : inputMode === "document" && documentFormat === "pdf" && selectedOcrPageCount > 0
-                        ? selectedOcrPageCount === selectedDocumentPages.length
-                          ? "Translate with OCR"
-                          : "Translate text + OCR"
-                        : "Translate to English"}
+                  {translateButtonLabel}
                 </button>
               )}
               <button type="button" onClick={handleReset} disabled={processing} className="secondary-button w-full">
@@ -1859,7 +2004,7 @@ export default function HomePage() {
             {showResultsPanel ? (
               <section className="workspace-panel min-h-[520px] space-y-4 p-3 sm:p-4 lg:p-5">
                 {hasTranslation || processing ? (
-                  <div className="sticky top-4 z-10 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+                  <div className="z-10 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 md:sticky md:top-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -2160,7 +2305,7 @@ export default function HomePage() {
                     ) : null}
 
                     {activeView === "side-by-side" ? (
-                      canShowPdfSideBySide ? (
+                      canShowPdfSideBySide && isLargeScreen ? (
                         <PdfSideBySideView
                           pdfUrl={pdfObjectUrl ?? ""}
                           totalPages={pdfTotalPages}
@@ -2181,15 +2326,14 @@ export default function HomePage() {
                 ) : null}
               </section>
             ) : (
-              <section className="workspace-panel flex min-h-[520px] items-center justify-center p-8 text-center">
-                <div className="mx-auto max-w-md">
-                  <p className="eyebrow">Workspace</p>
-                  <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-slate-50">Load a source to begin</h2>
-                  <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                    Upload a PDF, DOCX, EPUB, PowerPoint, or image—or paste Chinese text directly.
-                  </p>
-                </div>
-              </section>
+              <EmptyState
+                onFileDrop={(file) => void handleDroppedFile(file)}
+                onTextDrop={handleDroppedText}
+                onPasteText={() => {
+                  handleInputModeChange("text");
+                  window.setTimeout(() => document.getElementById("source-text-input")?.focus(), 60);
+                }}
+              />
             )}
           </section>
         </div>
@@ -2233,6 +2377,42 @@ export default function HomePage() {
         onDismissExtracted={(chinese) => setExtractedEntities((entities) => entities.filter((entity) => entity.chinese !== chinese))}
         open={isGlossaryOpen}
         onClose={() => setIsGlossaryOpen(false)}
+      />
+
+      {/* Mobile sticky action bar: keeps Translate reachable without scrolling the sidebar. */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 pt-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 xl:hidden"
+        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+      >
+        {processing ? (
+          <div className="mx-auto flex max-w-[1480px] items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">
+                {statusMessage || "Translating..."}
+              </p>
+              {totalUnits > 0 ? (
+                <p className="mt-0.5 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                  {Math.min(completedUnits, totalUnits)} / {totalUnits}
+                </p>
+              ) : null}
+            </div>
+            <button type="button" onClick={handleCancelTranslation} className="secondary-button shrink-0 px-4 py-2.5 text-sm">
+              Pause
+            </button>
+          </div>
+        ) : (
+          <div className="mx-auto max-w-[1480px]">
+            <button type="button" onClick={handleTranslate} disabled={translateDisabled} className="primary-button w-full py-3 text-sm">
+              {translateButtonLabel}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <DropZoneOverlay
+        disabled={processing}
+        onFileDrop={(file) => void handleDroppedFile(file)}
+        onTextDrop={handleDroppedText}
       />
 
       <Toast message={toastMessage} visible={toastVisible} />
