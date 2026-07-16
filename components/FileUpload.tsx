@@ -43,7 +43,7 @@ export default function FileUpload({ fileName, onFileSelect }: FileUploadProps) 
         <p className="break-words text-sm font-medium text-slate-800 dark:text-slate-100">
           {fileName ? fileName : "Drop a document here or click to browse"}
         </p>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">PDF, DOCX, EPUB, or PowerPoint (.pptx)</p>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">PDF, DOCX, EPUB, or PowerPoint (.pptx)</p>
       </label>
     </section>
   );

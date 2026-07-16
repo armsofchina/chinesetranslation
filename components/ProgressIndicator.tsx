@@ -54,11 +54,11 @@ export default function ProgressIndicator({
               <span className="absolute inline-flex h-2 w-2 rounded-full bg-amber-500" />
             </span>
           )}
-          <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
             {isDone ? "Done" : streaming ? "Live translation" : stepLabel[step as Exclude<ProgressStep, "idle" | "done">]}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
+        <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
           {totalUnits > 0 ? (
             <span>
               {Math.min(completedUnits, totalUnits)} / {totalUnits}
@@ -80,7 +80,7 @@ export default function ProgressIndicator({
       </div>
 
       {statusMessage ? (
-        <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">{statusMessage}</p>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{statusMessage}</p>
       ) : null}
     </section>
   );

@@ -207,7 +207,7 @@ export default function PdfSideBySideView({
             type="button"
             onClick={handlePrev}
             disabled={currentPage <= 1}
-            className="secondary-button h-8 px-2.5 text-xs"
+            className="secondary-button h-8 px-2.5 text-sm"
           >
             Prev
           </button>
@@ -215,7 +215,7 @@ export default function PdfSideBySideView({
             type="button"
             onClick={handleNext}
             disabled={currentPage >= effectivePageCount}
-            className="secondary-button h-8 px-2.5 text-xs"
+            className="secondary-button h-8 px-2.5 text-sm"
           >
             Next
           </button>
@@ -237,7 +237,7 @@ export default function PdfSideBySideView({
               <button
                 type="button"
                 onClick={() => handlePageChange(nextUntranslatedPage.value)}
-                className="secondary-button h-8 px-2.5 text-xs"
+                className="secondary-button h-8 px-2.5 text-sm"
               >
                 Next empty
               </button>
@@ -246,7 +246,7 @@ export default function PdfSideBySideView({
               <button
                 type="button"
                 onClick={() => setSourceDisplay("pdf")}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                className={`rounded-md px-2.5 py-1 text-sm font-medium transition ${
                   sourceDisplay === "pdf"
                     ? "bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-slate-50"
                     : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -258,7 +258,7 @@ export default function PdfSideBySideView({
                 type="button"
                 onClick={() => setSourceDisplay("text")}
                 disabled={!canShowTextSource}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                className={`rounded-md px-2.5 py-1 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
                   sourceDisplay === "text"
                     ? "bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-slate-50"
                     : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -277,7 +277,7 @@ export default function PdfSideBySideView({
               type="button"
               onClick={() => setZoom("fit-width")}
               disabled={showTextSource}
-              className="secondary-button h-8 px-2.5 text-xs"
+              className="secondary-button h-8 px-2.5 text-sm"
             >
               Fit
             </button>
@@ -297,7 +297,7 @@ export default function PdfSideBySideView({
             onNext={() => moveSearch(1)}
           />
           {normalizedSearchQuery ? (
-            <span className="text-[11px] text-slate-400 dark:text-slate-500">Chinese matches open the readable Text view.</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">Chinese matches open the readable Text view.</span>
           ) : null}
         </div>
       </div>

@@ -133,7 +133,7 @@ export default function SideBySideView({ chunks, unitLabel = "Section" }: SideBy
             unitLabel={unitLabel}
             onPageChange={scrollToPage}
           />
-          <span className="text-xs text-slate-500 dark:text-slate-400">
+          <span className="text-sm text-slate-500 dark:text-slate-400">
             Enter a number, use the stepper, or scroll normally.
           </span>
         </div>
@@ -163,7 +163,7 @@ export default function SideBySideView({ chunks, unitLabel = "Section" }: SideBy
           <div className="flex flex-wrap items-center gap-2 px-1">
             <p className="eyebrow">{unitLabel} {group.pageNumber}</p>
             {group.chunks.length > 1 ? (
-              <span className="status-pill">{group.chunks.length} segments</span>
+              <span className="status-pill">{group.chunks.length} sections</span>
             ) : null}
           </div>
 

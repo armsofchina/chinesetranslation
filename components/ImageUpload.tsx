@@ -43,7 +43,7 @@ export default function ImageUpload({ fileName, onFileSelect }: ImageUploadProps
         <p className="break-words text-sm font-medium text-slate-800 dark:text-slate-100">
           {fileName ? fileName : "Drop a scan, screenshot, or photo here, or click to browse"}
         </p>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">PNG, JPG, WEBP, BMP, or TIFF</p>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">PNG, JPG, WEBP, BMP, or TIFF</p>
       </label>
     </section>
   );

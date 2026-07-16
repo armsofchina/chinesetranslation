@@ -24,7 +24,7 @@ export default function AppHeader({
         <h1 className="text-lg font-semibold tracking-tight text-slate-950 dark:text-slate-50 sm:text-xl">
           Chinese to English Translator
         </h1>
-        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">OCR, glossary, review, and export in one workspace</p>
+        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">OCR, glossary, review, and export in one workspace</p>
       </div>
       <div className="flex items-center gap-2">
         <span
@@ -39,7 +39,7 @@ export default function AppHeader({
         <button
           type="button"
           onClick={onOpenApiSettings}
-          className="secondary-button px-3 py-2 text-xs"
+          className="secondary-button px-3 py-2 text-sm"
           title="API key and connection settings"
         >
           Settings

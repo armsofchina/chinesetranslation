@@ -63,7 +63,7 @@ function SegmentEditor({
               {issue.code}
             </span>
           ))}
-          {chunk.translationMemoryHit ? <span className="status-pill bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-200">TM match</span> : null}
+          {chunk.translationMemoryHit ? <span className="status-pill bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-200">Reused translation</span> : null}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -73,14 +73,14 @@ function SegmentEditor({
               setRetranslating(true);
               void onRetranslate(chunk.id).finally(() => setRetranslating(false));
             }}
-            className="secondary-button px-3 py-1.5 text-xs"
+            className="secondary-button px-3 py-1.5 text-sm"
           >
             {retranslating ? "Retranslating…" : "Retranslate"}
           </button>
           <button
             type="button"
             onClick={() => onToggleApproved(chunk.id)}
-            className={`secondary-button px-3 py-1.5 text-xs ${
+            className={`secondary-button px-3 py-1.5 text-sm ${
               approved
                 ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
                 : ""
@@ -108,7 +108,7 @@ function SegmentEditor({
       </div>
 
       {issues.length > 0 ? (
-        <ul className="mt-3 space-y-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+        <ul className="mt-3 space-y-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
           {issues.map((issue) => (
             <li key={`${issue.id}-message`}>{issue.message}</li>
           ))}
@@ -134,7 +134,7 @@ function SegmentEditor({
           value={chunk.reviewNote || ""}
           onChange={(event) => onNoteChange(chunk.id, event.target.value)}
           placeholder="Add a note for this segment…"
-          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
         />
       </label>
     </article>

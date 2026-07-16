@@ -158,7 +158,7 @@ export default function ApiKeySettings({
               Choose which account and model gateway should run this project.
             </p>
           </div>
-          <button type="button" onClick={onClose} className="secondary-button px-3 py-1.5 text-xs">
+          <button type="button" onClick={onClose} className="secondary-button px-3 py-1.5 text-sm">
             Close
           </button>
         </div>
@@ -175,7 +175,7 @@ export default function ApiKeySettings({
             }`}
           >
             <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">PPQ</span>
-            <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+            <span className="mt-1 block text-sm leading-6 text-slate-500 dark:text-slate-400">
               Use the shared app key or your own PPQ key.
             </span>
           </button>
@@ -197,7 +197,7 @@ export default function ApiKeySettings({
                 </span>
               ) : null}
             </span>
-            <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+            <span className="mt-1 block text-sm leading-6 text-slate-500 dark:text-slate-400">
               Connect your account and use its models, credits, and limits.
             </span>
           </button>
@@ -211,7 +211,7 @@ export default function ApiKeySettings({
                   Translation model
                 </label>
                 {modelCatalogLoading ? (
-                  <span className="text-[11px] text-slate-400 dark:text-slate-500">Refreshing models…</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Refreshing models…</span>
                 ) : null}
               </div>
               <select
@@ -237,7 +237,7 @@ export default function ApiKeySettings({
                   </optgroup>
                 ) : null}
               </select>
-              <p id={modelDescriptionId} className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              <p id={modelDescriptionId} className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
                 {selectedOpenRouterModel.automatic
                   ? "Recommended: OpenRouter automatically chooses an available zero-cost model for each request."
                   : selectedOpenRouterModel.free
@@ -245,11 +245,11 @@ export default function ApiKeySettings({
                     : "Paid model. Translation usage is charged against the connected OpenRouter account."}
               </p>
               {!modelCatalogAvailable ? (
-                <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
                   The live catalog is temporarily unavailable. Automatic free selection is still available.
                 </p>
               ) : null}
-              <p className="mt-2 font-mono text-[10px] text-slate-400 dark:text-slate-500">
+              <p className="mt-2 font-mono text-xs text-slate-500 dark:text-slate-400">
                 {selectedOpenRouterModel.id}
               </p>
             </div>
@@ -262,11 +262,11 @@ export default function ApiKeySettings({
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">OpenRouter is connected</p>
-                      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                      <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
                         Your OpenRouter key is encrypted in browser-bound HttpOnly session cookies and is never exposed to page scripts.
                       </p>
                       {openRouterUserId ? (
-                        <p className="mt-2 font-mono text-[11px] text-slate-500 dark:text-slate-400">{openRouterUserId}</p>
+                        <p className="mt-2 font-mono text-xs text-slate-500 dark:text-slate-400">{openRouterUserId}</p>
                       ) : null}
                     </div>
                     <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
@@ -278,11 +278,11 @@ export default function ApiKeySettings({
                       href="https://openrouter.ai/settings/keys"
                       target="_blank"
                       rel="noreferrer"
-                      className="secondary-button px-3 py-2 text-xs"
+                      className="secondary-button px-3 py-2 text-sm"
                     >
                       Manage OpenRouter
                     </a>
-                    <button type="button" onClick={onDisconnectOpenRouter} className="secondary-button px-3 py-2 text-xs">
+                    <button type="button" onClick={onDisconnectOpenRouter} className="secondary-button px-3 py-2 text-sm">
                       Disconnect
                     </button>
                   </div>
@@ -290,13 +290,13 @@ export default function ApiKeySettings({
               ) : (
                 <>
                   <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Connect in one click</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
                     You will sign in at OpenRouter and authorize a user-controlled API key for this tool.
                   </p>
                   <a href="/api/auth/openrouter/start" className="primary-button mt-4 inline-flex px-4 py-2.5 text-sm">
                     Connect OpenRouter
                   </a>
-                  <p className="mt-3 text-[11px] leading-5 text-slate-400 dark:text-slate-500">
+                  <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
                     After authorization, the key is encrypted in browser-bound HttpOnly session cookies. You can disconnect here or revoke it in OpenRouter.
                   </p>
                 </>
@@ -307,14 +307,14 @@ export default function ApiKeySettings({
           <section className="mt-5">
             <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-900 dark:bg-sky-950/40">
               <p className="text-sm font-medium text-sky-900 dark:text-sky-100">A personal PPQ key is optional.</p>
-              <p className="mt-1 text-xs leading-5 text-sky-800 dark:text-sky-200">
+              <p className="mt-1 text-sm leading-6 text-sky-800 dark:text-sky-200">
                 Leave it blank to use the shared server key, or add your own key for separate billing and usage limits.
               </p>
               <a
                 href="https://ppq.ai/"
                 target="_blank"
                 rel="noreferrer"
-                className="secondary-button mt-3 inline-flex px-3 py-1.5 text-xs"
+                className="secondary-button mt-3 inline-flex px-3 py-1.5 text-sm"
               >
                 Open PPQ
               </a>
@@ -347,7 +347,7 @@ export default function ApiKeySettings({
                   Clear key
                 </button>
               </div>
-              <p className="text-[11px] leading-5 text-slate-400 dark:text-slate-500">
+              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
                 A remembered PPQ key is stored in this browser and sent only to this app&apos;s translation routes.
               </p>
             </form>

@@ -15,7 +15,7 @@ const OPTIONS: Array<{ id: ThemePreference; label: string }> = [
 
 export default function ThemeToggle({ value, onChange }: ThemeToggleProps) {
   return (
-    <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs dark:border-slate-800 dark:bg-slate-950/60">
+    <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm dark:border-slate-800 dark:bg-slate-950/60">
       {OPTIONS.map((option) => (
         <button
           key={option.id}

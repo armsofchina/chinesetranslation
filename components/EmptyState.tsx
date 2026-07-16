@@ -68,7 +68,7 @@ export default function EmptyState({ onFileDrop, onTextDrop, onPasteText }: Empt
             Paste text
           </button>
         </div>
-        <p className="mt-3 text-[11px] leading-4 text-slate-400 dark:text-slate-500">
+        <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
           Tip: press Cmd/Ctrl+V anywhere to paste text or a screenshot.
         </p>
       </div>

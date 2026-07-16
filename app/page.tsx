@@ -432,7 +432,7 @@ export default function HomePage() {
 
       return {
         title: pdfName || "PDF ready",
-        detail: `${pdfTotalPages} page${pdfTotalPages === 1 ? "" : "s"} loaded · ${pagesWithSelectableText} selectable · ${ocrPageCount} OCR candidate${ocrPageCount === 1 ? "" : "s"}${unavailablePdfPageCount > 0 ? ` · ${unavailablePdfPageCount} unavailable` : ""}`,
+        detail: `${pdfTotalPages} page${pdfTotalPages === 1 ? "" : "s"} loaded · ${pagesWithSelectableText} with selectable text · ${ocrPageCount} needing OCR${unavailablePdfPageCount > 0 ? ` · ${unavailablePdfPageCount} unavailable` : ""}`,
         helper: pdfScannedMessage || (ocrPageCount > 0 ? SCANNED_MESSAGE : "This document appears mostly text-selectable and is ready for translation.")
       };
     }
@@ -1350,7 +1350,7 @@ export default function HomePage() {
           }, job);
           ocrText = ocrResult.text.trim();
           if (!ocrText) {
-            throw new Error(`No readable text was found on page ${page.pageNumber}.`);
+            throw new Error(`Page ${page.pageNumber} has no readable text — it may be blank or too faint for OCR.`);
           }
           savedOcrText.set(page.pageNumber, ocrText);
           setTranslationPages((pages) => [
@@ -1369,7 +1369,7 @@ export default function HomePage() {
         const { text, model, qa, translationMemoryHit } = await translateChunkWithMemory(sourceChunk, rollingContext, job);
 
         if (!text.trim()) {
-          throw new Error(`Empty OCR translation output returned for page ${page.pageNumber}.`);
+          throw new Error(`The translator returned nothing for page ${page.pageNumber}. Resume to retry it.`);
         }
 
         const ocrChunk: TranslationChunk = {
@@ -1406,7 +1406,7 @@ export default function HomePage() {
         const { text, model, qa, translationMemoryHit } = await translateChunkWithMemory(pageChunk, rollingContext, job);
 
         if (!text.trim()) {
-          throw new Error(`Empty translation output returned for page ${page.pageNumber}.`);
+          throw new Error(`The translator returned nothing for page ${page.pageNumber}. Resume to retry it.`);
         }
 
         translatedPageChunks.push({ ...pageChunk, translatedEnglish: text, qa, translationMemoryHit });
@@ -1452,7 +1452,7 @@ export default function HomePage() {
       const ocrResult = await transcribeImageWithRetry({ id: "image-ocr-1", pageNumber: 1, imageDataUrl: job.imageDataUrl }, job);
       ocrText = ocrResult.text.trim();
       if (!ocrText) {
-        throw new Error("No readable text was found in this image.");
+        throw new Error("No readable text was found in this image — try a sharper or higher-contrast photo.");
       }
       setTranslationPages([{ pageNumber: 1, originalText: ocrText, translatedText: "", chunks: [] }]);
     }
@@ -1467,7 +1467,7 @@ export default function HomePage() {
     const { text, model, qa, translationMemoryHit } = await translateChunkWithMemory(sourceChunk, "", job);
 
     if (!text.trim()) {
-      throw new Error("Empty image translation result.");
+      throw new Error("The translator returned nothing for this image. Please try again.");
     }
 
     const normalizedChunk: TranslationChunk = {
@@ -1594,7 +1594,7 @@ export default function HomePage() {
           const { text, model, qa, translationMemoryHit } = await translateChunkWithMemory(chunk, rollingContext, job);
 
           if (!text.trim()) {
-            throw new Error("Empty translation result.");
+            throw new Error("The translator returned nothing. Please try again.");
           }
 
           completedById.set(chunk.id, { ...chunk, translatedEnglish: text, qa, translationMemoryHit });
@@ -1831,19 +1831,19 @@ export default function HomePage() {
               <section className="workspace-panel p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="eyebrow">Source</p>
+                  <p className="eyebrow">Step 1</p>
                   <h2 className="mt-1 text-lg font-semibold text-slate-950 dark:text-slate-50">Add content</h2>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={progressStep === "extracting" ? "status-pill bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200" : hasSourceLoaded ? "status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200" : "status-pill"}>
                     <span className={`h-1.5 w-1.5 rounded-full ${progressStep === "extracting" ? "animate-pulse bg-amber-500" : hasSourceLoaded ? "bg-emerald-500" : "bg-slate-400"}`} />
-                    {progressStep === "extracting" ? "Extracting" : hasSourceLoaded ? "Ready" : "Waiting"}
+                    {progressStep === "extracting" ? "Extracting" : hasSourceLoaded ? "Ready" : "No source yet"}
                   </span>
                   {hasSourceLoaded ? (
                     <button
                       type="button"
                       onClick={() => setSourcePanelOpen((open) => !open)}
-                      className="secondary-button px-2.5 py-1.5 text-xs"
+                      className="secondary-button px-2.5 py-1.5 text-sm"
                     >
                       {sourcePanelOpen ? "Hide" : "Change"}
                     </button>
@@ -1877,10 +1877,10 @@ export default function HomePage() {
                 <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   {progressStep === "extracting" ? "Extracting text from your file…" : sourceSummary.title}
                 </p>
-                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
                   {progressStep === "extracting" ? statusMessage || "Reading the document…" : sourceSummary.detail}
                 </p>
-                <div className="mt-3 grid gap-2 border-t border-slate-200 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                <div className="mt-3 grid gap-2 border-t border-slate-200 pt-3 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
                   <div className="flex items-center justify-between gap-3">
                     <span>Input</span>
                     <span className="font-medium text-slate-700 dark:text-slate-200">
@@ -1889,27 +1889,27 @@ export default function HomePage() {
                   </div>
                   {inputMode === "document" && documentFormat === "pdf" && pdfTotalPages > 0 ? (
                     <div className="flex items-center justify-between gap-3">
-                      <span>OCR pages</span>
+                      <span>Pages needing OCR</span>
                       <span className="font-medium text-slate-700 dark:text-slate-200">{ocrPageCount}</span>
                     </div>
                   ) : null}
                 </div>
-                <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">{sourceSummary.helper}</p>
+                <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">{sourceSummary.helper}</p>
               </div>
               </section>
 
               <section className="workspace-panel p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="eyebrow">Translation</p>
-                  <h2 className="mt-1 text-lg font-semibold text-slate-950 dark:text-slate-50">Tune and run</h2>
+                  <p className="eyebrow">Step 2 · Optional</p>
+                  <h2 className="mt-1 text-lg font-semibold text-slate-950 dark:text-slate-50">Options</h2>
                 </div>
                 <span className="status-pill">{selectedDomain.label}</span>
               </div>
 
               <div className="mt-4">
                 <DomainSelector value={domain} onChange={handleDomainChange} disabled={processing} />
-                <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{selectedDomain.description}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{selectedDomain.description}</p>
               </div>
 
               {inputMode === "document" && pdfTotalPages > 1 ? (
@@ -1930,23 +1930,23 @@ export default function HomePage() {
                 <div className="workspace-panel-quiet p-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Glossary</p>
-                    <button type="button" onClick={() => setIsGlossaryOpen(true)} disabled={processing} className="secondary-button px-2.5 py-1.5 text-xs">
+                    <button type="button" onClick={() => setIsGlossaryOpen(true)} disabled={processing} className="secondary-button px-2.5 py-1.5 text-sm">
                       Open
                     </button>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="status-pill">{extractedEntities.length} detected</span>
+                    <span className="status-pill">{extractedEntities.length} found</span>
                     <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-                      {lockedGlossaryCount} locked
+                      {lockedGlossaryCount} pinned
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={handleAnalyzeTerms}
                     disabled={processing || analyzingTerms || inputMode === "image" || (inputMode === "text" ? !pastedText.trim() : selectedDocumentPages.length === 0)}
-                    className="secondary-button mt-3 w-full text-xs"
+                    className="secondary-button mt-3 w-full text-sm"
                   >
-                    {analyzingTerms ? "Analyzing terms…" : "Analyze terms with AI"}
+                    {analyzingTerms ? "Analyzing terms…" : "Suggest glossary terms"}
                   </button>
                   {lockedGlossaryCount > 0 ? (
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -1983,7 +1983,7 @@ export default function HomePage() {
               <button type="button" onClick={handleReset} disabled={processing} className="secondary-button w-full">
                 New document
               </button>
-              <p className="text-center text-[11px] leading-4 text-slate-400 dark:text-slate-500">
+              <p className="text-center text-[11px] leading-4 text-slate-500 dark:text-slate-400">
                 Workspace changes save automatically on this device.
               </p>
             </section>
@@ -2022,7 +2022,7 @@ export default function HomePage() {
                             </span>
                           ) : null}
                         </div>
-                        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">
                           {processing && totalUnits > 0
                             ? `Working through ${Math.min(completedUnits, totalUnits)} of ${totalUnits} ${inputMode === "document" ? `${documentUnitLabel}s` : inputMode === "image" ? "image steps" : "sections"}`
                             : translationStale
@@ -2058,7 +2058,7 @@ export default function HomePage() {
                               <button
                                 type="button"
                                 onClick={() => setReviewMode((enabled) => !enabled)}
-                                className={`secondary-button h-9 px-3 text-xs ${
+                                className={`secondary-button h-9 px-3 text-sm ${
                                   reviewMode
                                     ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200"
                                     : ""
@@ -2071,7 +2071,7 @@ export default function HomePage() {
                                   type="button"
                                   onClick={undoTranslationEdit}
                                   disabled={editHistoryRef.current.length === 0}
-                                  className="secondary-button h-9 px-3 text-xs"
+                                  className="secondary-button h-9 px-3 text-sm"
                                 >
                                   Undo edit
                                 </button>
@@ -2102,7 +2102,7 @@ export default function HomePage() {
                               <button
                                 type="button"
                                 onClick={() => setDocumentFontSize(16)}
-                                className="secondary-button h-8 border-0 bg-transparent px-2 text-xs"
+                                className="secondary-button h-8 border-0 bg-transparent px-2 text-sm"
                                 title="Reset text size"
                               >
                                 100%
@@ -2110,7 +2110,7 @@ export default function HomePage() {
                               <button
                                 type="button"
                                 onClick={() => setReadingWidth((prev) => (prev === "focused" ? "wide" : "focused"))}
-                                className="secondary-button h-8 border-0 bg-transparent px-2 text-xs"
+                                className="secondary-button h-8 border-0 bg-transparent px-2 text-sm"
                                 title="Toggle reading width"
                               >
                                 {readingWidth === "focused" ? "Wide" : "Focus"}
@@ -2166,7 +2166,7 @@ export default function HomePage() {
                           </div>
                           {ocrPageCount > 0 ? (
                             <span className="status-pill bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-                              {ocrPageCount} OCR page{ocrPageCount === 1 ? "" : "s"} detected
+                              {ocrPageCount} page{ocrPageCount === 1 ? "" : "s"} need{ocrPageCount === 1 ? "s" : ""} OCR
                             </span>
                           ) : null}
                           {unavailablePdfPageCount > 0 ? (
@@ -2279,7 +2279,7 @@ export default function HomePage() {
                               <div className="h-4 w-3/4 animate-pulse rounded bg-amber-100/80 dark:bg-slate-800" />
                               <div className="h-4 w-full animate-pulse rounded bg-amber-100/80 dark:bg-slate-800" />
                               <div className="h-4 w-5/6 animate-pulse rounded bg-amber-100/80 dark:bg-slate-800" />
-                              <p className="pt-2 text-sm text-slate-400 dark:text-slate-500">Waiting for the model to respond...</p>
+                              <p className="pt-2 text-sm text-slate-500 dark:text-slate-400">Waiting for the model to respond...</p>
                             </div>
                           ) : null}
 
@@ -2387,11 +2387,11 @@ export default function HomePage() {
         {processing ? (
           <div className="mx-auto flex max-w-[1480px] items-center gap-3">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">
+              <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">
                 {statusMessage || "Translating..."}
               </p>
               {totalUnits > 0 ? (
-                <p className="mt-0.5 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                <p className="mt-0.5 text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
                   {Math.min(completedUnits, totalUnits)} / {totalUnits}
                 </p>
               ) : null}

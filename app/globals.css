@@ -6,7 +6,7 @@
   color-scheme: light;
   --page-bg: #f6f7f9;
   --page-bg-dark: #090b10;
-  --font-ui: "Avenir Next", "Segoe UI", Arial, sans-serif;
+  --font-ui: "Avenir Next", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-doc: Georgia, "Times New Roman", serif;
 }
 
@@ -16,7 +16,7 @@
 
 body {
   @apply text-slate-900 antialiased dark:text-slate-50;
-  font-family: var(--font-ui), "Avenir Next", "Segoe UI", sans-serif;
+  font-family: var(--font-ui), sans-serif;
   background: var(--page-bg);
   min-height: 100vh;
 }

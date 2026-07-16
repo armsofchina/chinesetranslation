@@ -22,7 +22,7 @@ export default function TranslationQualityPanel({
     <section className="workspace-panel-quiet flex flex-wrap items-center justify-between gap-3 p-3">
       <div>
         <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Quality review</p>
-        <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+        <p className="mt-0.5 text-sm leading-6 text-slate-500 dark:text-slate-400">
           {issues.length === 0
             ? "Automated checks found no obvious consistency problems."
             : `${errorCount} error${errorCount === 1 ? "" : "s"} and ${warningCount} warning${warningCount === 1 ? "" : "s"} need review.`}
@@ -42,8 +42,8 @@ export default function TranslationQualityPanel({
             {warningCount} warnings
           </span>
         ) : null}
-        <button type="button" onClick={onOpenReview} className="secondary-button px-3 py-1.5 text-xs">
-          Review segments
+        <button type="button" onClick={onOpenReview} className="secondary-button px-3 py-1.5 text-sm">
+          Review sections
         </button>
       </div>
     </section>

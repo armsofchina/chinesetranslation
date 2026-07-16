@@ -40,7 +40,7 @@ export function PageJumpControl({
 
   return (
     <form onSubmit={handleSubmit} className="flex items-center gap-1.5" aria-label={`${unitLabel} navigation`}>
-      <label htmlFor={inputId} className="text-xs font-medium text-slate-600 dark:text-slate-300">
+      <label htmlFor={inputId} className="text-sm font-medium text-slate-600 dark:text-slate-300">
         {unitLabel}
       </label>
       <input
@@ -60,13 +60,13 @@ export function PageJumpControl({
           }
         }}
         onBlur={() => commitPage(draft)}
-        className="h-8 w-16 rounded-lg border border-slate-300 bg-white px-2 text-center text-xs font-semibold tabular-nums text-slate-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-sky-900"
+        className="h-8 w-16 rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-semibold tabular-nums text-slate-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-sky-900"
         aria-label={`Go to ${unitLabel.toLowerCase()}`}
       />
-      <span className="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
+      <span className="whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
         {minPage === 1 ? `of ${totalPages}` : `${minPage}–${totalPages}`}
       </span>
-      <button type="submit" className="secondary-button h-8 px-2.5 text-xs">
+      <button type="submit" className="secondary-button h-8 px-2.5 text-sm">
         Go
       </button>
     </form>
@@ -117,7 +117,7 @@ export function BilingualSearchControls({
         placeholder="Search Chinese or English…"
         className="h-9 min-w-[220px] flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:ring-sky-900 sm:max-w-sm"
       />
-      <span className="min-w-0 text-xs text-slate-500 dark:text-slate-400" aria-live="polite">
+      <span className="min-w-0 text-sm text-slate-500 dark:text-slate-400" aria-live="polite">
         {resultStatus}
       </span>
       <div className="flex items-center gap-1">
@@ -125,7 +125,7 @@ export function BilingualSearchControls({
           type="button"
           onClick={onPrevious}
           disabled={!hasResults}
-          className="secondary-button h-8 px-2.5 text-xs"
+          className="secondary-button h-8 px-2.5 text-sm"
           aria-label="Previous search match"
         >
           Prev match
@@ -134,7 +134,7 @@ export function BilingualSearchControls({
           type="button"
           onClick={onNext}
           disabled={!hasResults}
-          className="secondary-button h-8 px-2.5 text-xs"
+          className="secondary-button h-8 px-2.5 text-sm"
           aria-label="Next search match"
         >
           Next match

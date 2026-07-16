@@ -151,14 +151,14 @@ export default function EntityGlossary({ extracted, entries, onEntriesChange, op
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
           <div>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Glossary</h3>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">
-              {lockedCount} locked · {merged.length} terms
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {lockedCount} pinned · {merged.length} terms
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                        className="rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             aria-label="Close"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M12 4L4 12M4 4l8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
@@ -171,10 +171,10 @@ export default function EntityGlossary({ extracted, entries, onEntriesChange, op
               key={f}
               type="button"
               onClick={() => setFilter(f)}
-              className={`whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
+              className={`whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition ${
                 filter === f
                   ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                  : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+                  : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
               }`}
             >
               {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
@@ -210,7 +210,7 @@ export default function EntityGlossary({ extracted, entries, onEntriesChange, op
                             type="text"
                             value={draftChinese}
                             onChange={(e) => setDraftChinese(e.target.value)}
-                            className="min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:border-amber-400 focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                            className="min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-amber-400 focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                             placeholder="Chinese source term..."
                             aria-label="Chinese source term"
                           />
@@ -221,14 +221,14 @@ export default function EntityGlossary({ extracted, entries, onEntriesChange, op
                             onChange={(e) => setDraftEnglish(e.target.value)}
                             onKeyDown={(e) => { if (e.key === "Enter") handleSaveEdit(originalIndex); if (e.key === "Escape") setEditingIndex(null); }}
                             autoFocus
-                            className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:border-amber-400 focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                            className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 focus:border-amber-400 focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                             placeholder="English..."
                             aria-label="Approved English translation"
                           />
                           <button
                             type="button"
                             onClick={() => handleSaveEdit(originalIndex)}
-                            className="rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-emerald-500"
+                            className="rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-500"
                           >
                             Save
                           </button>
@@ -238,7 +238,7 @@ export default function EntityGlossary({ extracted, entries, onEntriesChange, op
                         <button
                           type="button"
                           onClick={() => handleStartEdit(originalIndex)}
-                          className="mt-1 block text-left text-xs text-slate-500 hover:text-amber-600 dark:text-slate-400 dark:hover:text-amber-400"
+                          className="mt-1 block text-left text-sm text-slate-500 hover:text-amber-600 dark:text-slate-400 dark:hover:text-amber-400"
                         >
                           {entry.english || <span className="italic text-slate-300 dark:text-slate-600">No translation set</span>}
                         </button>
@@ -248,7 +248,7 @@ export default function EntityGlossary({ extracted, entries, onEntriesChange, op
                       <button
                         type="button"
                         onClick={() => handleLockToggle(originalIndex)}
-                        title={entry.locked ? "Unlock" : "Lock this translation"}
+                        title={entry.locked ? "Unpin" : "Pin this translation"}
                         className={`rounded-md p-1 text-[11px] transition ${
                           entry.locked
                             ? "text-emerald-600 dark:text-emerald-400"
@@ -275,7 +275,7 @@ export default function EntityGlossary({ extracted, entries, onEntriesChange, op
               );
             })}
             {filtered.length === 0 ? (
-              <p className="py-8 text-center text-xs text-slate-400 dark:text-slate-500">
+              <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                 No terms found. Upload a document or add manually.
               </p>
             ) : null}
@@ -287,12 +287,12 @@ export default function EntityGlossary({ extracted, entries, onEntriesChange, op
           <button
             type="button"
             onClick={handleAddCustom}
-            className="rounded-lg border border-dashed border-slate-200 py-2 text-[11px] font-medium text-slate-500 transition hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-300"
+            className="rounded-lg border border-dashed border-slate-200 py-2 text-sm font-medium text-slate-500 transition hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-300"
           >
             Add term
           </button>
-          <button type="button" onClick={() => importRef.current?.click()} className="secondary-button text-xs">Import</button>
-          <button type="button" onClick={handleExport} disabled={merged.length === 0} className="secondary-button text-xs">Export</button>
+          <button type="button" onClick={() => importRef.current?.click()} className="secondary-button text-sm">Import</button>
+          <button type="button" onClick={handleExport} disabled={merged.length === 0} className="secondary-button text-sm">Export</button>
         </div>
       </aside> : null}
     </>

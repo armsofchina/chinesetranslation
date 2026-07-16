@@ -92,25 +92,25 @@ export default function LargeFileWarningModal({
 
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="workspace-panel-quiet p-3">
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">Selected</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Selected</p>
             <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
               {summary.selectedUnits} {summary.unitLabel}{summary.selectedUnits === 1 ? "" : "s"}
             </p>
           </div>
           <div className="workspace-panel-quiet p-3">
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">Characters</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Characters</p>
             <p className="mt-1 text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">
               {summary.sourceCharacters.toLocaleString()}
             </p>
           </div>
           <div className="workspace-panel-quiet p-3">
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">API requests</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">API requests</p>
             <p className="mt-1 text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">
               ~{summary.estimatedRequests.toLocaleString()}
             </p>
           </div>
           <div className="workspace-panel-quiet p-3">
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">Input tokens</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Input tokens</p>
             <p className="mt-1 text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">
               ~{summary.estimatedInputTokens.toLocaleString()}
             </p>
@@ -123,7 +123,7 @@ export default function LargeFileWarningModal({
           </p>
         ) : null}
 
-        <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
+        <p className="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400">
           Estimates include prompt and context overhead, but not output tokens. Automatic retries can increase actual usage by up to three times for failed requests.
         </p>
 

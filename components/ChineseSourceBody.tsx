@@ -59,7 +59,7 @@ function ParagraphBlock({ text, compact, highlightQuery }: { text: string; compa
 export default function ChineseSourceBody({ text, compact = false, highlightQuery }: ChineseSourceBodyProps) {
   const { blocks, footnotes } = parseChineseSource(text);
   if (blocks.length === 0 && footnotes.length === 0) {
-    return <p className="cn-text text-sm text-slate-400 dark:text-slate-500">無可顯示文字</p>;
+    return <p className="cn-text text-sm text-slate-500 dark:text-slate-400">無可顯示文字</p>;
   }
 
   return (
@@ -72,7 +72,7 @@ export default function ChineseSourceBody({ text, compact = false, highlightQuer
                 <thead>
                   <tr className="border-b border-slate-200 dark:border-slate-700">
                     {block.headers.map((h, j) => (
-                      <th key={j} className="px-3 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      <th key={j} className="px-3 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
                         <SearchHighlightedText text={h || `Col ${j + 1}`} query={highlightQuery} />
                       </th>
                     ))}
@@ -82,7 +82,7 @@ export default function ChineseSourceBody({ text, compact = false, highlightQuer
                   {block.rows.map((row, r) => (
                     <tr key={r} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
                       {row.map((cell, c) => (
-                        <td key={c} className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
+                        <td key={c} className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
                           <span className="whitespace-pre-wrap break-words">
                             <SearchHighlightedText text={cell} query={highlightQuery} />
                           </span>
@@ -98,7 +98,7 @@ export default function ChineseSourceBody({ text, compact = false, highlightQuer
         if (block.type === "preformatted") {
           return (
             <div key={`p-${i}`} className={compact ? "mb-3" : "mb-5"}>
-              <pre className="cn-text overflow-x-auto rounded-lg border border-slate-200 bg-white/60 p-3 font-mono text-[11px] leading-6 text-slate-600 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-400">
+              <pre className="cn-text overflow-x-auto rounded-lg border border-slate-200 bg-white/60 p-3 font-mono text-xs leading-6 text-slate-600 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-400">
                 <SearchHighlightedText text={block.text} query={highlightQuery} />
               </pre>
             </div>
