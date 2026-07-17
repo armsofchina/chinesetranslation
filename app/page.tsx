@@ -25,6 +25,7 @@ import TextInputPanel from "@/components/TextInputPanel";
 import Toast from "@/components/Toast";
 import TranslationTabs, { TranslationView } from "@/components/TranslationTabs";
 import TranslationEditor from "@/components/TranslationEditor";
+import { TranslationHistoryModal } from "@/components/TranslationHistoryList";
 import TranslationQualityPanel from "@/components/TranslationQualityPanel";
 import { AiProviderId, normalizeAiProvider } from "@/lib/aiProviders";
 import {
@@ -67,6 +68,15 @@ import {
   joinEnglishTranslation
 } from "@/lib/textChunking";
 import { applyThemePreference, getSavedThemePreference, saveThemePreference } from "@/lib/theme";
+import {
+  clearTranslationHistory,
+  deleteTranslationHistoryEntry,
+  listTranslationHistory,
+  makeHistoryEntryId,
+  saveTranslationHistoryEntry,
+  toHistoryChunks,
+  TranslationHistoryEntry
+} from "@/lib/translationHistory";
 import { DocumentFormat, ExtractedPdfPage, ThemePreference, TranslationChunk, TranslationPage } from "@/lib/types";
 import { assertCurrentTranslationJob, createTranslationJob, TranslationJobSnapshot } from "@/lib/translationJob";
 import { findTranslationMemory, rememberTranslation } from "@/lib/translationMemory";
@@ -74,6 +84,7 @@ import { findTranslationMemory, rememberTranslation } from "@/lib/translationMem
 const USER_API_KEY_STORAGE = "translator-user-ppq-key";
 const LEGACY_USER_API_KEY_STORAGE = "translator-user-openrouter-key";
 const PROVIDER_STORAGE = "translator-ai-provider";
+const HISTORY_ENABLED_STORAGE = "translator-history-enabled";
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_DOCUMENT_UNITS = 250;
@@ -164,6 +175,9 @@ export default function HomePage() {
   const [translationStale, setTranslationStale] = useState(false);
   const [canResume, setCanResume] = useState(false);
   const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<TranslationHistoryEntry[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [historySavingEnabled, setHistorySavingEnabled] = useState(true);
 
   // Streaming / live progress state.
   const [liveText, setLiveText] = useState("");
@@ -190,6 +204,8 @@ export default function HomePage() {
   const resultsRef = useRef<HTMLElement | null>(null);
   const editHistoryRef = useRef<TranslationChunk[][]>([]);
   const connectedFromOpenRouterRef = useRef(false);
+  const historyEntryRef = useRef<TranslationHistoryEntry | null>(null);
+  const historyEnabledRef = useRef(true);
 
   useEffect(() => {
     const savedTheme = getSavedThemePreference();
@@ -218,6 +234,15 @@ export default function HomePage() {
     setOpenRouterModel(normalizeOpenRouterModel(window.localStorage.getItem(OPENROUTER_MODEL_STORAGE)));
     setProvider(normalizeAiProvider(window.localStorage.getItem(PROVIDER_STORAGE)));
   }, []);
+
+  useEffect(() => {
+    setHistorySavingEnabled(window.localStorage.getItem(HISTORY_ENABLED_STORAGE) !== "0");
+    void listTranslationHistory().then(setHistoryEntries).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    historyEnabledRef.current = historySavingEnabled;
+  }, [historySavingEnabled]);
 
   useEffect(() => {
     let toastTimer: number | undefined;
@@ -734,6 +759,16 @@ export default function HomePage() {
       })
     );
     setApprovedChunkIds((ids) => ids.filter((id) => id !== chunkId));
+    if (historyEntryRef.current && !translationStale) {
+      const nextEntry: TranslationHistoryEntry = {
+        ...historyEntryRef.current,
+        savedAt: Date.now(),
+        chunks: toHistoryChunks(nextChunks),
+        approvedChunkIds: approvedChunkIds.filter((id) => id !== chunkId)
+      };
+      historyEntryRef.current = nextEntry;
+      void saveTranslationHistoryEntry(nextEntry).then(refreshHistory).catch(() => undefined);
+    }
   };
 
   const updateReviewNote = (chunkId: string, reviewNote: string) => {
@@ -807,15 +842,34 @@ export default function HomePage() {
   };
 
   const toggleChunkApproved = (chunkId: string) => {
-    setApprovedChunkIds((ids) =>
-      ids.includes(chunkId) ? ids.filter((id) => id !== chunkId) : [...ids, chunkId]
-    );
+    const nextIds = approvedChunkIds.includes(chunkId)
+      ? approvedChunkIds.filter((id) => id !== chunkId)
+      : [...approvedChunkIds, chunkId];
+    setApprovedChunkIds(nextIds);
+    if (historyEntryRef.current && !translationStale) {
+      const nextEntry: TranslationHistoryEntry = {
+        ...historyEntryRef.current,
+        savedAt: Date.now(),
+        approvedChunkIds: nextIds
+      };
+      historyEntryRef.current = nextEntry;
+      void saveTranslationHistoryEntry(nextEntry).then(refreshHistory).catch(() => undefined);
+    }
   };
 
   const showToast = (message: string) => {
     setToastMessage(message);
     setToastVisible(true);
     setTimeout(() => setToastVisible(false), 1800);
+  };
+
+  const refreshHistory = () => {
+    void listTranslationHistory().then(setHistoryEntries).catch(() => undefined);
+  };
+
+  const handleHistoryEnabledChange = (enabled: boolean) => {
+    setHistorySavingEnabled(enabled);
+    window.localStorage.setItem(HISTORY_ENABLED_STORAGE, enabled ? "1" : "0");
   };
 
   const replacePdfUrl = (nextUrl?: string) => {
@@ -1308,6 +1362,7 @@ export default function HomePage() {
     setTotalUnits(pagesToTranslate.length);
     setCompletedUnits(completedPages.length);
 
+    let lastModel = "";
     let ocrImageMap = new Map<number, string>();
     if (pagesNeedingOcr.length > 0) {
       if (!pdfFile) {
@@ -1392,6 +1447,7 @@ export default function HomePage() {
         setTranslationPages([...completedPages]);
         setTranslatedChunks([...completedChunks]);
         if (model) setUsedModel(model);
+        if (model) lastModel = model;
         setCompletedUnits(completedPages.length);
         completedResultCountRef.current = completedChunks.length;
         rollingContext = makeRollingContext(ocrText, text);
@@ -1427,13 +1483,14 @@ export default function HomePage() {
       setTranslationPages([...completedPages]);
       setTranslatedChunks([...completedChunks]);
       if (pageModel) setUsedModel(pageModel);
+      if (pageModel) lastModel = pageModel;
       setCompletedUnits(completedPages.length);
       completedResultCountRef.current = completedChunks.length;
     }
 
     setIsStreaming(false);
     setLiveText("");
-    return skippedOcrPageNumbers;
+    return { skippedPages: skippedOcrPageNumbers, chunks: completedChunks, model: lastModel };
   };
 
   const handleTranslateImage = async (resume: boolean, job: TranslationJobSnapshot) => {
@@ -1492,6 +1549,7 @@ export default function HomePage() {
     completedResultCountRef.current = 1;
     setIsStreaming(false);
     setLiveText("");
+    return { chunks: [normalizedChunk], model };
   };
 
   const runTranslation = async () => {
@@ -1561,11 +1619,18 @@ export default function HomePage() {
       assertCurrentTranslationJob(activeJobRef.current?.id, job.id, abortControllerRef.current.signal);
       setProgressStep("translating");
       let skippedPdfPages: number[] = [];
+      let archiveChunks: TranslationChunk[] = [];
+      let archiveModel = "";
 
       if (inputMode === "document") {
-        skippedPdfPages = await handleTranslateDocumentByUnit(resume, job);
+        const documentResult = await handleTranslateDocumentByUnit(resume, job);
+        skippedPdfPages = documentResult.skippedPages;
+        archiveChunks = documentResult.chunks;
+        archiveModel = documentResult.model;
       } else if (inputMode === "image") {
-        await handleTranslateImage(resume, job);
+        const imageResult = await handleTranslateImage(resume, job);
+        archiveChunks = imageResult.chunks;
+        archiveModel = imageResult.model;
       } else {
         const completedById = new Map(
           (resume ? translatedChunks : [])
@@ -1581,6 +1646,7 @@ export default function HomePage() {
           : "";
         setTotalUnits(job.chunks.length);
         setCompletedUnits(completedChunks.length);
+        let lastModel = "";
 
         for (let index = 0; index < job.chunks.length; index += 1) {
           const chunk = job.chunks[index];
@@ -1602,11 +1668,19 @@ export default function HomePage() {
             .map((sourceChunk) => completedById.get(sourceChunk.id))
             .filter((entry): entry is TranslationChunk => Boolean(entry));
           setTranslatedChunks(nextCompleted);
-          if (model) setUsedModel(model);
+          if (model) {
+            setUsedModel(model);
+            lastModel = model;
+          }
           setCompletedUnits(nextCompleted.length);
           completedResultCountRef.current = nextCompleted.length;
           rollingContext = makeRollingContext(chunk.originalChinese, text);
         }
+
+        archiveChunks = job.chunks
+          .map((chunk) => completedById.get(chunk.id))
+          .filter((chunk): chunk is TranslationChunk => Boolean(chunk));
+        archiveModel = lastModel;
 
         setIsStreaming(false);
         setLiveText("");
@@ -1623,6 +1697,24 @@ export default function HomePage() {
       setTranslationStale(false);
       setCanResume(false);
       setProgressStep("done");
+      if (historyEnabledRef.current && archiveChunks.length > 0) {
+        const entry: TranslationHistoryEntry = {
+          id: makeHistoryEntryId(sourceLabel, archiveChunks),
+          savedAt: Date.now(),
+          sourceLabel,
+          inputMode,
+          documentFormat: inputMode === "document" ? documentFormat : undefined,
+          domain,
+          usedModel: archiveModel || usedModel,
+          sourceCharacters: archiveChunks.reduce((total, chunk) => total + chunk.originalChinese.length, 0),
+          unitCount: new Set(archiveChunks.map((chunk) => chunk.pageNumber)).size,
+          unitLabel: inputMode === "document" ? documentUnitLabel : inputMode === "image" ? "image" : "section",
+          chunks: toHistoryChunks(archiveChunks),
+          approvedChunkIds: resume ? approvedChunkIds : []
+        };
+        historyEntryRef.current = entry;
+        void saveTranslationHistoryEntry(entry).then(refreshHistory).catch(() => undefined);
+      }
       if (skippedPdfPages.length > 0) {
         const skippedLabel = `${skippedPdfPages.length} page${skippedPdfPages.length === 1 ? "" : "s"}`;
         setErrorMessage(`Translation completed for the readable pages, but ${skippedLabel} could not be rendered and was skipped.`);
@@ -1756,7 +1848,96 @@ export default function HomePage() {
     setSourcePanelOpen(true);
     setActiveView("original");
     editHistoryRef.current = [];
+    historyEntryRef.current = null;
     clearWorkspaceSnapshot().catch(() => undefined);
+  };
+
+  const handleRestoreHistoryEntry = (entry: TranslationHistoryEntry) => {
+    if (processing) {
+      return;
+    }
+    entityAbortControllerRef.current?.abort();
+    sourceLoadRef.current += 1;
+    sourceRevisionRef.current += 1;
+    setErrorMessage("");
+    setStatusMessage("");
+    setProgressStep("idle");
+    setExtractedEntities([]);
+
+    // Rebuild pages and fresh QA reports from the stored chunks.
+    const restoredChunks = entry.chunks.map((chunk) => ({
+      ...chunk,
+      qa: buildSegmentQaReport(chunk, chunk.translatedEnglish, lockedGlossary),
+      translationMemoryHit: Boolean(chunk.translationMemoryHit)
+    }));
+    const chunksByPage = new Map<number, TranslationChunk[]>();
+    for (const chunk of restoredChunks) {
+      const pageChunks = chunksByPage.get(chunk.pageNumber) ?? [];
+      pageChunks.push(chunk);
+      chunksByPage.set(chunk.pageNumber, pageChunks);
+    }
+    const restoredPages: TranslationPage[] = Array.from(chunksByPage.entries())
+      .sort(([left], [right]) => left - right)
+      .map(([pageNumber, pageChunks]) => ({
+        pageNumber,
+        originalText: pageChunks.map((chunk) => chunk.originalChinese).join("\n\n"),
+        translatedText: normalizeTranslationFootnotes(joinEnglishTranslation(pageChunks)),
+        chunks: pageChunks
+      }));
+
+    if (entry.inputMode === "document") {
+      setInputMode("document");
+      setDocumentFormat(entry.documentFormat ?? "pdf");
+      const pages = restoredPages.map((page) => ({ pageNumber: page.pageNumber, text: page.originalText }));
+      const totalUnits = Math.max(pages.length, entry.unitCount);
+      setPdfName(entry.sourceLabel);
+      setPdfFile(undefined);
+      setPdfPages(pages);
+      setPdfTotalPages(totalUnits);
+      setDocumentRangeStart(1);
+      setDocumentRangeEnd(totalUnits);
+      setPdfScannedMessage("");
+      replacePdfUrl(undefined);
+      resetImageState();
+      setPastedText("");
+    } else if (entry.inputMode === "image") {
+      setInputMode("image");
+      resetPdfState();
+      setPastedText("");
+      setImageName(entry.sourceLabel);
+      setImageDataUrl(undefined);
+    } else {
+      setInputMode("text");
+      resetPdfState();
+      resetImageState();
+      setPastedText(restoredPages.map((page) => page.originalText).join("\n\n"));
+    }
+
+    setDomain(entry.domain);
+    setTranslatedChunks(restoredChunks);
+    setTranslationPages(restoredPages);
+    setApprovedChunkIds(entry.approvedChunkIds);
+    setUsedModel(entry.usedModel);
+    setTranslationStale(false);
+    setCanResume(false);
+    setReviewMode(false);
+    setActiveView("english");
+    setSourcePanelOpen(false);
+    setIsHistoryOpen(false);
+    editHistoryRef.current = [];
+    historyEntryRef.current = entry;
+  };
+
+  const handleDeleteHistoryEntry = (id: string) => {
+    if (historyEntryRef.current?.id === id) {
+      historyEntryRef.current = null;
+    }
+    void deleteTranslationHistoryEntry(id).then(refreshHistory).catch(() => undefined);
+  };
+
+  const handleClearHistory = () => {
+    historyEntryRef.current = null;
+    void clearTranslationHistory().then(refreshHistory).catch(() => undefined);
   };
 
   const handleCopyEnglish = async () => {
@@ -1980,9 +2161,22 @@ export default function HomePage() {
                   {translateButtonLabel}
                 </button>
               )}
-              <button type="button" onClick={handleReset} disabled={processing} className="secondary-button w-full">
-                New document
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    refreshHistory();
+                    setIsHistoryOpen(true);
+                  }}
+                  disabled={processing}
+                  className="secondary-button w-full"
+                >
+                  History
+                </button>
+                <button type="button" onClick={handleReset} disabled={processing} className="secondary-button w-full">
+                  New document
+                </button>
+              </div>
               <p className="text-center text-[11px] leading-4 text-slate-500 dark:text-slate-400">
                 Workspace changes save automatically on this device.
               </p>
@@ -2151,7 +2345,9 @@ export default function HomePage() {
                           className="max-h-[72vh] w-full rounded-xl border border-slate-200 object-contain dark:border-slate-800"
                         />
                       ) : (
-                        <p className="text-sm text-slate-600 dark:text-slate-300">No image loaded.</p>
+                        <p className="text-sm text-slate-600 dark:text-slate-300">
+                          {imageName ? "The original image isn't stored in history — re-upload it to preview." : "No image loaded."}
+                        </p>
                       )}
                     </article>
                   ) : inputMode === "document" ? (
@@ -2182,7 +2378,9 @@ export default function HomePage() {
                             className="mt-4 h-[72vh] min-h-[560px] w-full rounded-xl border border-slate-200 bg-white dark:border-slate-800"
                           />
                         ) : (
-                          <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">No PDF loaded.</p>
+                          <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+                            {pdfName ? "The original file isn't stored in history — re-upload it to preview." : "No PDF loaded."}
+                          </p>
                         )}
                       </article>
                     ) : (
@@ -2216,7 +2414,9 @@ export default function HomePage() {
                               className="max-h-[72vh] w-full rounded-xl border border-slate-200 object-contain dark:border-slate-800"
                             />
                           ) : (
-                            <p className="text-sm text-slate-600 dark:text-slate-300">No image loaded.</p>
+                            <p className="text-sm text-slate-600 dark:text-slate-300">
+                          {imageName ? "The original image isn't stored in history — re-upload it to preview." : "No image loaded."}
+                        </p>
                           )}
                         </article>
                       ) : inputMode === "document" ? (
@@ -2333,6 +2533,13 @@ export default function HomePage() {
                   handleInputModeChange("text");
                   window.setTimeout(() => document.getElementById("source-text-input")?.focus(), 60);
                 }}
+                historyEntries={historyEntries}
+                onRestoreHistory={handleRestoreHistoryEntry}
+                onDeleteHistory={handleDeleteHistoryEntry}
+                onOpenHistory={() => {
+                  refreshHistory();
+                  setIsHistoryOpen(true);
+                }}
               />
             )}
           </section>
@@ -2356,6 +2563,8 @@ export default function HomePage() {
         onSave={handleSaveApiKey}
         onClearSaved={handleClearSavedKey}
         onDisconnectOpenRouter={() => void handleDisconnectOpenRouter()}
+        historyEnabled={historySavingEnabled}
+        onHistoryEnabledChange={handleHistoryEnabledChange}
       />
 
       <LargeFileWarningModal
@@ -2413,6 +2622,15 @@ export default function HomePage() {
         disabled={processing}
         onFileDrop={(file) => void handleDroppedFile(file)}
         onTextDrop={handleDroppedText}
+      />
+
+      <TranslationHistoryModal
+        open={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        entries={historyEntries}
+        onRestore={handleRestoreHistoryEntry}
+        onDelete={handleDeleteHistoryEntry}
+        onClearAll={handleClearHistory}
       />
 
       <Toast message={toastMessage} visible={toastVisible} />

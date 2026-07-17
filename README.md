@@ -13,6 +13,7 @@ A polished Next.js MVP for translating Traditional and Simplified Chinese text i
 - Drag and drop anywhere in the window: documents, images, `.txt`/`.md` files, and selected text are routed to the right input mode automatically
 - Paste anywhere with Cmd/Ctrl+V (clipboard text or screenshots) and start translating with Cmd/Ctrl+Enter
 - Mobile-friendly layout with a sticky translate action bar and inline extraction progress
+- Automatic local history of completed translations (newest 25) with one-click restore, per-entry delete, and a settings opt-out — no account needed
 - Translate through PPQ using a secure backend route
 - Use default server API key or optional user-provided PPQ key
 - Switch between Original Chinese, English Translation, and Side-by-side views
@@ -97,7 +98,7 @@ npm run dev
 - For stronger protection across browser-cookie backups, optionally set a unique, high-entropy `OPENROUTER_SESSION_SECRET`; rotating it invalidates server-keyed OpenRouter connections. One-click connection also works without it.
 - Use `OPENROUTER_ALLOWED_MODELS` as a comma-separated allowlist when deployments need model/cost controls.
 - Translation requests have schema, size, rate, and two-minute upstream timeout limits. Multi-instance deployments should replace the in-process rate limiter with a shared store.
-- Uploaded files and workspace progress are stored locally in IndexedDB for recovery and are not uploaded by the extraction pipeline.
+- Uploaded files and workspace progress are stored locally in IndexedDB for recovery and are not uploaded by the extraction pipeline. Completed translations are also kept in an on-device history (newest 25, text only — original files are not re-stored) that can be disabled in settings or cleared anytime.
 - Legacy binary `.ppt` files must be saved as `.pptx` before upload.
 
 ## Verification

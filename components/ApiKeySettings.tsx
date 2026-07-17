@@ -24,6 +24,8 @@ type ApiKeySettingsProps = {
   onSave: () => void;
   onClearSaved: () => void;
   onDisconnectOpenRouter: () => void;
+  historyEnabled: boolean;
+  onHistoryEnabledChange: (enabled: boolean) => void;
 };
 
 export default function ApiKeySettings({
@@ -42,7 +44,9 @@ export default function ApiKeySettings({
   onRememberKeyChange,
   onSave,
   onClearSaved,
-  onDisconnectOpenRouter
+  onDisconnectOpenRouter,
+  historyEnabled,
+  onHistoryEnabledChange
 }: ApiKeySettingsProps) {
   const titleId = useId();
   const modelDescriptionId = useId();
@@ -353,6 +357,23 @@ export default function ApiKeySettings({
             </form>
           </section>
         )}
+
+        <div className="mt-6 border-t border-slate-200 pt-4 dark:border-slate-700">
+          <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={historyEnabled}
+              onChange={(event) => onHistoryEnabledChange(event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+            />
+            <span>
+              Save completed translations on this device
+              <span className="mt-0.5 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                Keeps the newest 25 in local history so you can reopen them later. Nothing is uploaded. Existing entries stay until you clear them from History.
+              </span>
+            </span>
+          </label>
+        </div>
       </div>
     </div>
   );

@@ -1,14 +1,20 @@
 "use client";
 
 import { useId, useState } from "react";
+import TranslationHistoryList from "@/components/TranslationHistoryList";
+import { TranslationHistoryEntry } from "@/lib/translationHistory";
 
 type EmptyStateProps = {
   onFileDrop: (file: File) => void;
   onTextDrop: (text: string) => void;
   onPasteText: () => void;
+  historyEntries?: TranslationHistoryEntry[];
+  onRestoreHistory?: (entry: TranslationHistoryEntry) => void;
+  onDeleteHistory?: (id: string) => void;
+  onOpenHistory?: () => void;
 };
 
-export default function EmptyState({ onFileDrop, onTextDrop, onPasteText }: EmptyStateProps) {
+export default function EmptyState({ onFileDrop, onTextDrop, onPasteText, historyEntries = [], onRestoreHistory, onDeleteHistory, onOpenHistory }: EmptyStateProps) {
   const inputId = useId();
   const [isDragging, setIsDragging] = useState(false);
 
@@ -71,6 +77,27 @@ export default function EmptyState({ onFileDrop, onTextDrop, onPasteText }: Empt
         <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
           Tip: press Cmd/Ctrl+V anywhere to paste text or a screenshot.
         </p>
+        {historyEntries.length > 0 && onRestoreHistory && onDeleteHistory ? (
+          <div className="mt-6 w-full border-t border-slate-200 pt-4 text-left dark:border-slate-800">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="eyebrow">Recent translations</p>
+              {historyEntries.length > 3 && onOpenHistory ? (
+                <button
+                  type="button"
+                  onClick={onOpenHistory}
+                  className="text-sm font-medium text-sky-600 transition hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+                >
+                  View all {historyEntries.length}
+                </button>
+              ) : null}
+            </div>
+            <TranslationHistoryList
+              entries={historyEntries.slice(0, 3)}
+              onRestore={onRestoreHistory}
+              onDelete={onDeleteHistory}
+            />
+          </div>
+        ) : null}
       </div>
     </section>
   );
